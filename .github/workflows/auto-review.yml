@@ -1,0 +1,249 @@
+name: Automated Bot Review
+
+# Trigger when all checks are successful and PR is ready for review
+on:
+  pull_request:
+    types:
+      - ready_for_review
+      - synchronize
+  check_suite:
+    types:
+      - completed
+  workflow_run:
+    workflows: ["*"]
+    types:
+      - completed
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: read
+  statuses: read
+
+jobs:
+  auto-review:
+    name: Auto Review by Bot
+    runs-on: ubuntu-latest
+
+    # Only run on pull requests that are ready for review and not in draft mode
+    if: |
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.draft == false ||
+      (github.event_name == 'check_suite' && github.event.check_suite.conclusion == 'success' && github.event.check_suite.pull_requests[0]) ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.pull_requests[0])
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Fetch full history for better context
+          fetch-depth: 0
+
+      - name: Get PR number
+        id: get-pr
+        shell: bash
+        run: |
+          set -eu
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "pr_number=${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "check_suite" ]; then
+            # Extract PR number from check_suite event
+            PR_NUM=$(echo '${{ toJson(github.event.check_suite.pull_requests) }}' | jq -r '.[0].number // empty')
+            if [ -n "$PR_NUM" ]; then
+              echo "pr_number=$PR_NUM" >> "$GITHUB_OUTPUT"
+            else
+              echo "No PR found in check_suite event"
+              exit 0
+            fi
+          elif [ "${{ github.event_name }}" = "workflow_run" ]; then
+            # Extract PR number from workflow_run event
+            PR_NUM=$(echo '${{ toJson(github.event.workflow_run.pull_requests) }}' | jq -r '.[0].number // empty')
+            if [ -n "$PR_NUM" ]; then
+              echo "pr_number=$PR_NUM" >> "$GITHUB_OUTPUT"
+            else
+              echo "No PR found in workflow_run event"
+              exit 0
+            fi
+          else
+            echo "Unsupported event type: ${{ github.event_name }}"
+            exit 0
+          fi
+
+      - name: Check all required checks status
+        id: check-status
+        if: steps.get-pr.outputs.pr_number
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.BOT_TOKEN }}
+          PR_NUMBER: ${{ steps.get-pr.outputs.pr_number }}
+        run: |
+          set -eu
+
+          # Wait a bit to ensure all checks are registered
+          sleep 5
+
+          # Get PR details using GitHub CLI
+          PR_DATA=$(gh pr view "$PR_NUMBER" --json state,isDraft,mergeable,statusCheckRollup)
+
+          # Check if PR is still open and not draft
+          STATE=$(echo "$PR_DATA" | jq -r '.state')
+          IS_DRAFT=$(echo "$PR_DATA" | jq -r '.isDraft')
+
+          if [ "$STATE" != "OPEN" ]; then
+            echo "PR is not open (state: $STATE), skipping review"
+            echo "can_review=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$IS_DRAFT" = "true" ]; then
+            echo "PR is in draft mode, skipping review"
+            echo "can_review=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Check status of all required checks
+          STATUS_CHECKS=$(echo "$PR_DATA" | jq -r '.statusCheckRollup // []')
+
+          # Count total checks and successful checks
+          TOTAL_CHECKS=$(echo "$STATUS_CHECKS" | jq 'length')
+
+          if [ "$TOTAL_CHECKS" -eq 0 ]; then
+            echo "No status checks found, proceeding with review"
+            echo "can_review=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Check if all checks have succeeded
+          FAILED_CHECKS=$(echo "$STATUS_CHECKS" | jq '[.[] | select(.conclusion != "SUCCESS" and .conclusion != "SKIPPED" and .conclusion != "NEUTRAL")] | length')
+          PENDING_CHECKS=$(echo "$STATUS_CHECKS" | jq '[.[] | select(.status == "IN_PROGRESS" or .status == "QUEUED" or .status == "PENDING")] | length')
+
+          echo "Total checks: $TOTAL_CHECKS"
+          echo "Failed checks: $FAILED_CHECKS"
+          echo "Pending checks: $PENDING_CHECKS"
+
+          if [ "$FAILED_CHECKS" -gt 0 ]; then
+            echo "Some checks have failed, skipping review"
+            echo "can_review=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$PENDING_CHECKS" -gt 0 ]; then
+            echo "Some checks are still pending, skipping review for now"
+            echo "can_review=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "All checks have passed, proceeding with review"
+          echo "can_review=true" >> "$GITHUB_OUTPUT"
+
+      - name: Check if bot already reviewed
+        id: check-reviewed
+        if: steps.check-status.outputs.can_review == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.BOT_TOKEN }}
+          PR_NUMBER: ${{ steps.get-pr.outputs.pr_number }}
+        run: |
+          set -eu
+
+          # Get reviews from the bot
+          REVIEWS=$(gh api "/repos/${{ github.repository }}/pulls/$PR_NUMBER/reviews" --jq '[.[] | select(.user.login == "jfheinrich-bot")] | length')
+
+          echo "Found $REVIEWS previous reviews from jfheinrich-bot"
+
+          if [ "$REVIEWS" -gt 0 ]; then
+            echo "Bot has already reviewed this PR"
+            echo "already_reviewed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Bot has not reviewed this PR yet"
+            echo "already_reviewed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Perform automated review
+        if: |
+          steps.check-status.outputs.can_review == 'true' &&
+          steps.check-reviewed.outputs.already_reviewed == 'false'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.BOT_TOKEN }}
+          PR_NUMBER: ${{ steps.get-pr.outputs.pr_number }}
+        run: |
+          set -eu
+
+          # Get PR details for the review comment
+          PR_DATA=$(gh pr view "$PR_NUMBER" --json title,author,headRefName,additions,deletions)
+          PR_TITLE=$(echo "$PR_DATA" | jq -r '.title')
+          PR_AUTHOR=$(echo "$PR_DATA" | jq -r '.author.login')
+          PR_BRANCH=$(echo "$PR_DATA" | jq -r '.headRefName')
+          ADDITIONS=$(echo "$PR_DATA" | jq -r '.additions')
+          DELETIONS=$(echo "$PR_DATA" | jq -r '.deletions')
+
+          # Create review comment
+          REVIEW_BODY=$(cat <<EOF
+          ## 🤖 Automated Bot Review
+
+          **Status:** ✅ All checks passed
+
+          ### Summary
+          - **Author:** @$PR_AUTHOR
+          - **Branch:** \`$PR_BRANCH\`
+          - **Changes:** +$ADDITIONS / -$DELETIONS lines
+
+          ### Automated Checks
+          All required status checks have completed successfully. This PR is ready for human review.
+
+          ### Next Steps
+          - Code owner review is required from: **@jfheinrich-eu/maintainers**
+          - Additional reviewers: **@Copilot**
+
+          ---
+          *This is an automated review. Please wait for human reviewers to approve before merging.*
+          EOF
+          )
+
+          # Submit the review
+          gh pr review "$PR_NUMBER" --approve --body "$REVIEW_BODY"
+
+          echo "✅ Automated review submitted successfully"
+
+      - name: Add review label
+        if: |
+          steps.check-status.outputs.can_review == 'true' &&
+          steps.check-reviewed.outputs.already_reviewed == 'false'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.BOT_TOKEN }}
+          PR_NUMBER: ${{ steps.get-pr.outputs.pr_number }}
+        run: |
+          set -eu
+
+          # Add 'automated' label to indicate bot has reviewed
+          gh pr edit "$PR_NUMBER" --add-label "automated" || true
+
+          echo "✅ Added 'automated' label to PR"
+
+      - name: Handle errors gracefully
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.BOT_TOKEN }}
+          PR_NUMBER: ${{ steps.get-pr.outputs.pr_number }}
+        run: |
+          set -eu
+
+          # Only post comment if we have a PR number
+          if [ -n "$PR_NUMBER" ] && [ "$PR_NUMBER" != "null" ]; then
+            ERROR_MESSAGE=$(cat <<EOF
+          ## ⚠️ Automated Review Failed
+
+          The automated bot review encountered an error. Please check the workflow logs for details.
+
+          You can still proceed with manual review by the code owners and maintainers.
+          EOF
+          )
+
+            gh pr comment "$PR_NUMBER" --body "$ERROR_MESSAGE" || true
+          fi
+
+          echo "⚠️ Workflow failed but error was handled gracefully"
