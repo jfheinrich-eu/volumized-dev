@@ -3,9 +3,9 @@
 <!-- ========================================================= -->
 
 <p align="center">
-  <img src="docs/assets/volumized-dev-banner.png" alt="Volumized Dev Environment Banner" width="100%" />
+  <img src="docs/assets/volumized-dev-banner-fs8.png" alt="Volumized Dev Environment Banner" width="100%" />
   <br/><br/>
-  <img src="docs/assets/volumized-dev-logo.png" alt="volumized-dev logo" width="120" />
+  <img src="docs/assets/volumized-dev-logo-fs8.png" alt="volumized-dev logo" width="120" />
 </p>
 
 <h1 align="center">Volumized Dev Environment</h1>

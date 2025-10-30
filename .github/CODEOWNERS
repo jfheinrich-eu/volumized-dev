@@ -1,0 +1,22 @@
+# CODEOWNERS file
+# 
+# This file defines code ownership for the repository.
+# Users or teams listed here will be automatically requested for review
+# when a pull request modifies files matching the patterns.
+#
+# For organization-owned repositories, it's recommended to use team references
+# (e.g., @org/team-name) rather than individual users to ensure that code owner
+# reviews are properly recognized by branch protection rules.
+#
+# SETUP REQUIRED: Create a 'maintainers' team at:
+# https://github.com/orgs/jfheinrich-eu/teams
+# Then add @jfheinrich and other maintainers to the team.
+#
+# For more information, see:
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owner for everything in the repo
+# This ensures all PRs get a review request
+# For organization-owned repositories, using a team reference ensures
+# that code owner reviews are properly recognized by branch protection rules
+* @jfheinrich-eu/maintainers @jfheinrich-bot
