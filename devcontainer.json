@@ -1,0 +1,31 @@
+{
+  "name": "volumized-dev",
+  "remoteUser": "vscode",
+  "workspaceFolder": "/work",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.vscode-typescript-next",
+        "ms-python.python",
+        "ms-azuretools.vscode-docker",
+        "ms-vscode-remote.remote-containers",
+        "github.vscode-pull-request-github"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        "git.enableCommitSigning": true,
+        "git.alwaysSignOff": false,
+        "git.confirmSync": false,
+        "files.exclude": {
+          "**/__pycache__": true,
+          "**/.venv": true,
+          "**/node_modules": true
+        },
+        "python.defaultInterpreterPath": "/home/vscode/.venv/bin/python"
+      }
+    }
+  },
+  "runArgs": ["--platform=linux/arm64"],
+  "postCreateCommand": "git --version && gpg --version && node -v || true && python3 --version || true",
+  "forwardPorts": [3000, 5173, 8000, 8080]
+}
