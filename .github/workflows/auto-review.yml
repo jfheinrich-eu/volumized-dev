@@ -163,10 +163,14 @@ jobs:
         run: |
           set -eu
 
-          # Get reviews from the bot
-          REVIEWS=$(gh api "/repos/${{ github.repository }}/pulls/$PR_NUMBER/reviews" --jq '[.[] | select(.user.login == "jfheinrich-bot")] | length')
+          # Dynamically determine the bot's username from the token
+          BOT_USERNAME=$(gh api user --jq '.login')
+          echo "Detected bot username: $BOT_USERNAME"
 
-          echo "Found $REVIEWS previous reviews from jfheinrich-bot"
+          # Get reviews from the bot
+          REVIEWS=$(gh api "/repos/${{ github.repository }}/pulls/$PR_NUMBER/reviews" --jq "[.[] | select(.user.login == \"$BOT_USERNAME\")] | length")
+
+          echo "Found $REVIEWS previous reviews from $BOT_USERNAME"
 
           if [ "$REVIEWS" -gt 0 ]; then
             echo "Bot has already reviewed this PR"
