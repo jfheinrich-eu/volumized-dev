@@ -27,6 +27,11 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.BOT_TOKEN || secrets.GITHUB_TOKEN }}
 
+    # Set bash as default shell for all run steps in this job
+    defaults:
+      run:
+        shell: bash
+
     # Only run on pull requests that are ready for review and not in draft mode
     if: |
       github.event_name == 'pull_request' ||
@@ -42,7 +47,6 @@ jobs:
 
       - name: Validate and get PR number
         id: get-pr
-        shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
           PR_NUMBER_DIRECT: ${{ github.event.pull_request.number }}
@@ -84,7 +88,6 @@ jobs:
       - name: Check all required checks status
         id: check-status
         if: steps.get-pr.outputs.pr_number
-        shell: bash
         env:
           PR_NUMBER: ${{ steps.get-pr.outputs.pr_number }}
         run: |
@@ -157,7 +160,6 @@ jobs:
       - name: Check if bot already reviewed
         id: check-reviewed
         if: steps.check-status.outputs.can_review == 'true'
-        shell: bash
         env:
           PR_NUMBER: ${{ steps.get-pr.outputs.pr_number }}
         run: |
@@ -184,7 +186,6 @@ jobs:
         if: |
           steps.check-status.outputs.can_review == 'true' &&
           steps.check-reviewed.outputs.already_reviewed == 'false'
-        shell: bash
         env:
           PR_NUMBER: ${{ steps.get-pr.outputs.pr_number }}
         run: |
@@ -232,7 +233,6 @@ jobs:
         if: |
           steps.check-status.outputs.can_review == 'true' &&
           steps.check-reviewed.outputs.already_reviewed == 'false'
-        shell: bash
         env:
           PR_NUMBER: ${{ steps.get-pr.outputs.pr_number }}
         run: |
@@ -246,7 +246,6 @@ jobs:
 
       - name: Handle errors gracefully
         if: failure()
-        shell: bash
         env:
           PR_NUMBER: ${{ steps.get-pr.outputs.pr_number }}
         run: |
