@@ -185,6 +185,8 @@ jobs:
 
           **Status:** ✅ All checks passed
 
+          ### Pull Request: $PR_TITLE
+
           ### Summary
           - **Author:** @$PR_AUTHOR
           - **Branch:** \`$PR_BRANCH\`
