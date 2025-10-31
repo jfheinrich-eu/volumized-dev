@@ -86,66 +86,73 @@ jobs:
         run: |
           set -eu
 
-          # Wait a bit to ensure all checks are registered in GitHub's API
-          # This prevents race conditions where checks complete but aren't yet queryable
-          sleep 5
+          # Poll for status checks with exponential backoff to avoid race conditions
+          # This replaces the brittle sleep with a robust retry loop
+          MAX_ATTEMPTS=6
+          INITIAL_DELAY=2
+          DELAY=$INITIAL_DELAY
+          ATTEMPT=1
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            # Get PR details using GitHub CLI
+            PR_DATA=$(gh pr view "$PR_NUMBER" --json state,isDraft,mergeable,statusCheckRollup)
 
-          # Get PR details using GitHub CLI
-          PR_DATA=$(gh pr view "$PR_NUMBER" --json state,isDraft,mergeable,statusCheckRollup)
+            # Check if PR is still open and not draft
+            STATE=$(echo "$PR_DATA" | jq -r '.state')
+            IS_DRAFT=$(echo "$PR_DATA" | jq -r '.isDraft')
 
-          # Check if PR is still open and not draft
-          STATE=$(echo "$PR_DATA" | jq -r '.state')
-          IS_DRAFT=$(echo "$PR_DATA" | jq -r '.isDraft')
+            if [ "$STATE" != "OPEN" ]; then
+              echo "PR is not open (state: $STATE), skipping review"
+              echo "can_review=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
 
-          if [ "$STATE" != "OPEN" ]; then
-            echo "PR is not open (state: $STATE), skipping review"
-            echo "can_review=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+            if [ "$IS_DRAFT" = "true" ]; then
+              echo "PR is in draft mode, skipping review"
+              echo "can_review=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
 
-          if [ "$IS_DRAFT" = "true" ]; then
-            echo "PR is in draft mode, skipping review"
-            echo "can_review=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+            # Check status of all required checks
+            STATUS_CHECKS=$(echo "$PR_DATA" | jq -r '.statusCheckRollup // []')
 
-          # Check status of all required checks
-          STATUS_CHECKS=$(echo "$PR_DATA" | jq -r '.statusCheckRollup // []')
+            # Count total checks and successful checks
+            TOTAL_CHECKS=$(echo "$STATUS_CHECKS" | jq 'length')
 
-          # Count total checks and successful checks
-          TOTAL_CHECKS=$(echo "$STATUS_CHECKS" | jq 'length')
+            if [ "$TOTAL_CHECKS" -eq 0 ]; then
+              echo "No status checks found, proceeding with review"
+              echo "can_review=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
 
-          if [ "$TOTAL_CHECKS" -eq 0 ]; then
-            echo "No status checks found, proceeding with review"
-            echo "can_review=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+            # Check if all checks have succeeded
+            # Count checks that are not SUCCESS, SKIPPED, or NEUTRAL (these are considered failures)
+            FAILED_CHECKS=$(echo "$STATUS_CHECKS" | jq '[.[] | select(.conclusion != "SUCCESS" and .conclusion != "SKIPPED" and .conclusion != "NEUTRAL")] | length')
+            # Count checks that are still running or queued
+            PENDING_CHECKS=$(echo "$STATUS_CHECKS" | jq '[.[] | select(.status == "IN_PROGRESS" or .status == "QUEUED" or .status == "PENDING")] | length')
 
-          # Check if all checks have succeeded
-          # Count checks that are not SUCCESS, SKIPPED, or NEUTRAL (these are considered failures)
-          FAILED_CHECKS=$(echo "$STATUS_CHECKS" | jq '[.[] | select(.conclusion != null and .conclusion != "SUCCESS" and .conclusion != "SKIPPED" and .conclusion != "NEUTRAL")] | length')
-          # Count checks that are still running or queued
-          PENDING_CHECKS=$(echo "$STATUS_CHECKS" | jq '[.[] | select(.status == "IN_PROGRESS" or .status == "QUEUED" or .status == "PENDING")] | length')
+            echo "Attempt $ATTEMPT: Total checks: $TOTAL_CHECKS, Failed: $FAILED_CHECKS, Pending: $PENDING_CHECKS"
 
-          echo "Total checks: $TOTAL_CHECKS"
-          echo "Failed checks: $FAILED_CHECKS"
-          echo "Pending checks: $PENDING_CHECKS"
+            if [ "$FAILED_CHECKS" -gt 0 ]; then
+              echo "Some checks have failed, skipping review"
+              echo "can_review=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
 
-          if [ "$FAILED_CHECKS" -gt 0 ]; then
-            echo "Some checks have failed, skipping review"
-            echo "can_review=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+            if [ "$PENDING_CHECKS" -eq 0 ]; then
+              echo "All checks have passed, proceeding with review"
+              echo "can_review=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
 
-          if [ "$PENDING_CHECKS" -gt 0 ]; then
-            echo "Some checks are still pending, skipping review for now"
-            echo "can_review=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          echo "All checks have passed, proceeding with review"
-          echo "can_review=true" >> "$GITHUB_OUTPUT"
-
+            # If there are pending checks, wait and retry
+            echo "Some checks are still pending, waiting $DELAY seconds before retry ($ATTEMPT/$MAX_ATTEMPTS)..."
+            sleep $DELAY
+            DELAY=$((DELAY * 2))
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+          echo "Timeout waiting for all checks to complete, skipping review"
+          echo "can_review=false" >> "$GITHUB_OUTPUT"
+          exit 0
       - name: Check if bot already reviewed
         id: check-reviewed
         if: steps.check-status.outputs.can_review == 'true'
