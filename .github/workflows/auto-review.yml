@@ -242,7 +242,7 @@ jobs:
           GH_TOKEN: ${{ secrets.BOT_TOKEN }}
           PR_NUMBER: ${{ steps.get-pr.outputs.pr_number }}
         run: |
-          set -eu
+          set -e
 
           # Only post comment if we have a PR number
           if [ -n "$PR_NUMBER" ] && [ "$PR_NUMBER" != "null" ]; then
