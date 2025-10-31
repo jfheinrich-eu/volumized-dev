@@ -1,0 +1,219 @@
+---
+name: Sync Repository Settings
+
+'on':
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/settings.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Note: GITHUB_TOKEN automatically has admin permissions when
+  # workflow is triggered from the default branch (main)
+  # See: https://docs.github.com/en/actions/security-guides/automatic-token-authentication#permissions-for-the-github_token
+
+jobs:
+  sync-settings:
+    name: Apply Repository Settings from settings.yml
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install yq for YAML parsing
+        run: |
+          # Use specific version for reproducibility and security
+          YQ_VERSION="v4.40.5"
+          YQ_BINARY="yq_linux_amd64"
+          sudo wget -qO /usr/local/bin/yq \
+            "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/${YQ_BINARY}"
+          # Verify checksum
+          echo "c7d8c5eab933a8b1c38691d8328bdc2ec0037ca24e44e5b16990fe2c52f8d7f5  /usr/local/bin/yq" | \
+            sudo sha256sum -c -
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Apply repository settings
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          echo "🔧 Applying repository settings"
+
+          # Extract repository settings
+          DESC=$(yq e '.repository.description' .github/settings.yml)
+          HOME=$(yq e '.repository.homepage' .github/settings.yml)
+          ISSUES=$(yq e '.repository.has_issues' .github/settings.yml)
+          PROJ=$(yq e '.repository.has_projects' .github/settings.yml)
+          WIKI=$(yq e '.repository.has_wiki' .github/settings.yml)
+          SQUASH=$(yq e '.repository.allow_squash_merge' \
+            .github/settings.yml)
+          MERGE=$(yq e '.repository.allow_merge_commit' \
+            .github/settings.yml)
+          REBASE=$(yq e '.repository.allow_rebase_merge' \
+            .github/settings.yml)
+          DEL_BR=$(yq e '.repository.delete_branch_on_merge' \
+            .github/settings.yml)
+
+          # Update repository settings
+          gh api -X PATCH "/repos/$REPO" \
+            -f description="$DESC" \
+            -f homepage="$HOME" \
+            -F has_issues=$ISSUES \
+            -F has_projects=$PROJ \
+            -F has_wiki=$WIKI \
+            -F allow_squash_merge=$SQUASH \
+            -F allow_merge_commit=$MERGE \
+            -F allow_rebase_merge=$REBASE \
+            -F delete_branch_on_merge=$DEL_BR
+
+          echo "✅ Repository settings applied"
+
+      - name: Apply branch protection rules
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          echo "🛡️ Applying branch protection"
+
+          # Extract branch protection settings
+          BRANCH=$(yq e '.branches[0].name' .github/settings.yml)
+          REV_COUNT=$(yq e \
+            '.branches[0].protection.required_pull_request_reviews.required_approving_review_count' \
+            .github/settings.yml)
+          DISMISS_STALE=$(yq e \
+            '.branches[0].protection.required_pull_request_reviews.dismiss_stale_reviews' \
+            .github/settings.yml)
+          CODE_OWNER=$(yq e \
+            '.branches[0].protection.required_pull_request_reviews.require_code_owner_reviews' \
+            .github/settings.yml)
+          STRICT_CHECK=$(yq e \
+            '.branches[0].protection.required_status_checks.strict' \
+            .github/settings.yml)
+          ENFORCE_ADMIN=$(yq e \
+            '.branches[0].protection.enforce_admins' \
+            .github/settings.yml)
+          LINEAR_HIST=$(yq e \
+            '.branches[0].protection.required_linear_history' \
+            .github/settings.yml)
+          FORCE_PUSH=$(yq e \
+            '.branches[0].protection.allow_force_pushes' \
+            .github/settings.yml)
+          ALLOW_DEL=$(yq e '.branches[0].protection.allow_deletions' \
+            .github/settings.yml)
+          CONV_RES=$(yq e \
+            '.branches[0].protection.required_conversation_resolution' \
+            .github/settings.yml)
+
+          # Extract status check contexts as JSON array
+          CONTEXTS=$(yq e -o=json \
+            '.branches[0].protection.required_status_checks.contexts' \
+            .github/settings.yml)
+
+          # Extract restrictions (users, teams, apps)
+          RESTRICT_USERS=$(yq e -o=json \
+            '.branches[0].protection.restrictions.users' \
+            .github/settings.yml)
+          RESTRICT_TEAMS=$(yq e -o=json \
+            '.branches[0].protection.restrictions.teams' \
+            .github/settings.yml)
+          RESTRICT_APPS=$(yq e -o=json \
+            '.branches[0].protection.restrictions.apps' \
+            .github/settings.yml)
+
+          # Build restrictions JSON
+          # If all are empty arrays, set to null, otherwise build object
+          if [ "$RESTRICT_USERS" = "[]" ] && \
+             [ "$RESTRICT_TEAMS" = "[]" ] && \
+             [ "$RESTRICT_APPS" = "[]" ]; then
+            RESTRICTIONS="null"
+          else
+            RESTRICTIONS=$(jq -n \
+              --argjson users "$RESTRICT_USERS" \
+              --argjson teams "$RESTRICT_TEAMS" \
+              --argjson apps "$RESTRICT_APPS" \
+              '{users: $users, teams: $teams, apps: $apps}')
+          fi
+
+          # Apply branch protection via API
+          gh api -X PUT "/repos/$REPO/branches/$BRANCH/protection" \
+            -f required_status_checks[strict]=$STRICT_CHECK \
+            -f required_status_checks[contexts]="$CONTEXTS" \
+            -F enforce_admins=$ENFORCE_ADMIN \
+            -F required_pull_request_reviews[dismiss_stale_reviews]=$DISMISS_STALE \
+            -F required_pull_request_reviews[require_code_owner_reviews]=$CODE_OWNER \
+            -F required_pull_request_reviews[required_approving_review_count]=$REV_COUNT \
+            -f restrictions="$RESTRICTIONS" \
+            -F required_linear_history=$LINEAR_HIST \
+            -F allow_force_pushes=$FORCE_PUSH \
+            -F allow_deletions=$ALLOW_DEL \
+            -F required_conversation_resolution=$CONV_RES
+
+          echo "✅ Branch protection applied"
+
+      - name: Create labels
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          echo "🏷️ Creating/updating labels"
+
+          # Get number of labels in settings.yml
+          LABEL_COUNT=$(yq e '.labels | length' .github/settings.yml)
+
+          if [ "$LABEL_COUNT" -gt 0 ]; then
+            for i in $(seq 0 $((LABEL_COUNT - 1))); do
+              NAME=$(yq e ".labels[$i].name" .github/settings.yml)
+              COLOR=$(yq e ".labels[$i].color" .github/settings.yml)
+              DESC=$(yq e ".labels[$i].description" .github/settings.yml)
+
+              # Try to create label, if it exists, update it
+              if gh label create "$NAME" --color "$COLOR" \
+                --description "$DESC" 2>/dev/null; then
+                echo "  ✓ Created label: $NAME"
+              else
+                gh label edit "$NAME" --color "$COLOR" \
+                  --description "$DESC" 2>/dev/null && \
+                  echo "  ✓ Updated label: $NAME" || \
+                  echo "  ⚠ Could not update: $NAME"
+              fi
+            done
+          else
+            echo "  No labels defined in settings.yml"
+          fi
+
+          echo "✅ Labels processed"
+
+      - name: Summary
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOFSUMMARY'
+          ## 🎉 Repository Settings Sync Complete
+
+          The following settings from `.github/settings.yml` have been
+          applied:
+
+          - ✅ Repository settings (description, homepage, features,
+            merge options)
+          - ✅ Branch protection rules for `main` branch
+          - ✅ Issue and PR labels
+
+          ### Next Steps
+
+          You can verify the applied settings in the repository
+          settings page.
+
+          ### Note
+
+          This workflow replaces the need for the Probot Settings App.
+          The settings are now automatically applied whenever
+          `.github/settings.yml` is updated on the main branch.
+          EOFSUMMARY

@@ -6,7 +6,7 @@ This directory contains configuration files for managing the volumized-dev repos
 
 ### `settings.yml`
 
-The `settings.yml` file defines repository-level settings that can be managed using the [Probot Settings App](https://github.com/repository-settings/app). This includes:
+The `settings.yml` file defines repository-level settings that are automatically applied via the `sync-repo-settings.yml` workflow. This includes:
 
 #### Repository Settings
 - **General**: Repository name, description, homepage, and topics
@@ -33,6 +33,37 @@ Standard labels for issue and PR management:
 - bug, documentation, duplicate, enhancement
 - good first issue, help wanted
 - security, dependencies, automated
+
+### `workflows/sync-repo-settings.yml`
+
+The repository settings sync workflow automatically applies configuration from `settings.yml` to the repository.
+
+#### Triggers
+- Push to main branch when `.github/settings.yml` is modified
+- Manual workflow dispatch
+
+#### Workflow Steps
+
+1. **Apply Repository Settings**: Updates repository description, homepage, features, and merge options
+2. **Apply Branch Protection**: Configures branch protection rules for the main branch
+3. **Create Labels**: Creates or updates issue and PR labels
+
+#### Features
+
+**Automated Configuration:**
+- No need for external GitHub Apps (like Probot Settings)
+- Settings applied directly via GitHub API
+- Runs automatically when settings.yml is updated
+
+**Security:**
+- Uses `GITHUB_TOKEN` for authentication
+- Minimal required permissions
+- Settings validated before application
+
+**User Experience:**
+- Clear step-by-step output
+- Detailed summary of applied settings
+- Error handling with informative messages
 
 ### `workflows/auto-review.yml`
 
@@ -75,15 +106,18 @@ The automated review workflow provides bot-assisted code review when all checks 
 
 ## Setup Instructions
 
-### 1. Install Probot Settings App
+### 1. Automatic Settings Sync
 
-To use the `settings.yml` file:
+The repository settings are now automatically applied via the `sync-repo-settings.yml` workflow:
 
-1. Install the [Probot Settings App](https://github.com/apps/settings) to your repository or organization
-2. Grant it access to the `jfheinrich-eu/volumized-dev` repository
-3. The app will automatically sync settings from `.github/settings.yml`
+1. Edit `.github/settings.yml` to modify repository configuration
+2. Commit and push changes to the main branch
+3. The workflow will automatically apply the settings within a few minutes
+4. Verify changes in repository settings page
 
-### 2. Configure Bot Token
+**Note:** This replaces the need for the Probot Settings App. Settings are applied directly via GitHub Actions.
+
+### 2. Configure Bot Token (Optional)
 
 The automated review workflow requires a GitHub token:
 
@@ -98,7 +132,9 @@ The automated review workflow requires a GitHub token:
    - Create a new secret named `BOT_TOKEN`
    - Paste your token value
 
-### 3. Create Required Team
+**Note:** This is only required for the automated review workflow, not for settings sync.
+
+### 3. Create Required Team (Optional)
 
 The settings reference `@jfheinrich-eu/maintainers` team:
 
@@ -117,10 +153,16 @@ Ensure the `jfheinrich-bot` user:
 
 ### Test Settings Sync
 
-After installing the Probot Settings App:
-1. Check repository settings match `.github/settings.yml`
-2. Verify branch protection rules are active on main
-3. Confirm labels have been created
+After pushing changes to `.github/settings.yml`:
+1. Go to Actions tab and verify the "Sync Repository Settings" workflow ran
+2. Check repository settings match `.github/settings.yml`
+3. Verify branch protection rules are active on main
+4. Confirm labels have been created
+
+You can also manually trigger the workflow:
+1. Go to Actions → Sync Repository Settings
+2. Click "Run workflow"
+3. Select the main branch and run
 
 ### Test Automated Review
 
@@ -136,9 +178,13 @@ After installing the Probot Settings App:
 
 To modify repository settings:
 1. Edit `.github/settings.yml`
-2. Commit and push changes
-3. Probot Settings App will sync within a few minutes
-4. Verify changes in repository settings
+2. Commit and push changes to main branch
+3. The workflow will automatically apply settings within a few minutes
+4. Verify changes in repository settings page
+
+Alternatively, manually trigger the workflow after making changes:
+1. Go to Actions → Sync Repository Settings
+2. Click "Run workflow" to apply immediately
 
 ### Updating Workflow
 
@@ -159,9 +205,15 @@ To modify the automated review workflow:
 ## Troubleshooting
 
 ### Settings not syncing
-- Verify Probot Settings App is installed and has access
-- Check app permissions in organization settings
-- Review app logs for errors
+- Check the "Sync Repository Settings" workflow run in the Actions tab for errors
+- Verify `.github/settings.yml` syntax is correct (valid YAML)
+- Ensure the workflow has sufficient permissions (default GITHUB_TOKEN should work)
+- Check workflow logs for specific error messages
+
+### Branch protection errors
+- The workflow requires admin permissions to set branch protection rules
+- Default GITHUB_TOKEN has these permissions when triggered from main branch
+- If errors occur, verify repository settings allow Actions to modify protection rules
 
 ### Bot not reviewing
 - Verify `BOT_TOKEN` secret is configured correctly
@@ -186,5 +238,6 @@ To modify the automated review workflow:
 
 - [GitHub Branch Protection](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches)
 - [GitHub Actions Security](https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions)
-- [Probot Settings](https://github.com/repository-settings/app)
+- [GitHub REST API - Repos](https://docs.github.com/en/rest/repos/repos)
+- [GitHub REST API - Branch Protection](https://docs.github.com/en/rest/branches/branch-protection)
 - [Code Owners](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners)
