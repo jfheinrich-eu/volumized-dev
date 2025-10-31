@@ -5,7 +5,7 @@
 repository:
   # General settings
   name: volumized-dev
-  description: "A fully isolated, reproducible development environment for macOS (Apple Silicon) using VS Code, Docker, and OrbStack"
+  description: "A fully isolated, reproducible development environment using VS Code, Docker, and OrbStack"
   homepage: https://github.com/jfheinrich-eu/volumized-dev
   topics:
     - docker
