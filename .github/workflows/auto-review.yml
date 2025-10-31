@@ -90,73 +90,70 @@ jobs:
         run: |
           set -eu
 
-          # Poll for status checks with exponential backoff to avoid race conditions
-          # This replaces the brittle sleep with a robust retry loop
-          MAX_ATTEMPTS=6
-          INITIAL_DELAY=2
-          DELAY=$INITIAL_DELAY
-          ATTEMPT=1
-          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
-            # Get PR details using GitHub CLI
-            PR_DATA=$(gh pr view "$PR_NUMBER" --json state,isDraft,mergeable,statusCheckRollup)
+          # Get PR details using GitHub CLI
+          PR_DATA=$(gh pr view "$PR_NUMBER" --json state,isDraft,mergeable,statusCheckRollup)
 
-            # Check if PR is still open and not draft
-            STATE=$(echo "$PR_DATA" | jq -r '.state')
-            IS_DRAFT=$(echo "$PR_DATA" | jq -r '.isDraft')
+          # Check if PR is still open and not draft
+          STATE=$(echo "$PR_DATA" | jq -r '.state')
+          IS_DRAFT=$(echo "$PR_DATA" | jq -r '.isDraft')
 
-            if [ "$STATE" != "OPEN" ]; then
-              echo "PR is not open (state: $STATE), skipping review"
-              echo "can_review=false" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
+          if [ "$STATE" != "OPEN" ]; then
+            echo "PR is not open (state: $STATE), skipping review"
+            echo "can_review=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
-            if [ "$IS_DRAFT" = "true" ]; then
-              echo "PR is in draft mode, skipping review"
-              echo "can_review=false" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
+          if [ "$IS_DRAFT" = "true" ]; then
+            echo "PR is in draft mode, skipping review"
+            echo "can_review=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
-            # Check status of all required checks
-            STATUS_CHECKS=$(echo "$PR_DATA" | jq -r '.statusCheckRollup // []')
+          # Check status of all required checks
+          STATUS_CHECKS=$(echo "$PR_DATA" | jq -r '.statusCheckRollup // []')
+          TOTAL_CHECKS=$(echo "$STATUS_CHECKS" | jq 'length')
 
-            # Count total checks and successful checks
-            TOTAL_CHECKS=$(echo "$STATUS_CHECKS" | jq 'length')
+          echo "Found $TOTAL_CHECKS status checks"
 
-            if [ "$TOTAL_CHECKS" -eq 0 ]; then
-              echo "No status checks found, proceeding with review"
-              echo "can_review=true" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
+          # If no checks or very few checks (like only this workflow), proceed with review
+          if [ "$TOTAL_CHECKS" -le 1 ]; then
+            echo "Few or no external status checks found, proceeding with review"
+            echo "can_review=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
-            # Check if all checks have succeeded
-            # Count checks that are not SUCCESS, SKIPPED, or NEUTRAL (these are considered failures)
-            FAILED_CHECKS=$(echo "$STATUS_CHECKS" | jq '[.[] | select(.conclusion != "SUCCESS" and .conclusion != "SKIPPED" and .conclusion != "NEUTRAL")] | length')
-            # Count checks that are still running or queued
-            PENDING_CHECKS=$(echo "$STATUS_CHECKS" | jq '[.[] | select(.status == "IN_PROGRESS" or .status == "QUEUED" or .status == "PENDING")] | length')
+          # For repositories with multiple checks, verify they passed
+          # Exclude this workflow from the check count to avoid circular dependency
+          EXTERNAL_CHECKS=$(echo "$STATUS_CHECKS" | jq --arg workflow_name "Automated Bot Review" '[.[] | select(.context != $workflow_name and .context != "auto-review")]')
+          EXTERNAL_TOTAL=$(echo "$EXTERNAL_CHECKS" | jq 'length')
 
-            echo "Attempt $ATTEMPT: Total checks: $TOTAL_CHECKS, Failed: $FAILED_CHECKS, Pending: $PENDING_CHECKS"
+          if [ "$EXTERNAL_TOTAL" -eq 0 ]; then
+            echo "No external status checks found, proceeding with review"
+            echo "can_review=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
-            if [ "$FAILED_CHECKS" -gt 0 ]; then
-              echo "Some checks have failed, skipping review"
-              echo "can_review=false" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
+          # Count external checks that failed
+          FAILED_CHECKS=$(echo "$EXTERNAL_CHECKS" | jq '[.[] | select(.conclusion != "SUCCESS" and .conclusion != "SKIPPED" and .conclusion != "NEUTRAL" and .conclusion != null)] | length')
+          # Count external checks that are still running
+          PENDING_CHECKS=$(echo "$EXTERNAL_CHECKS" | jq '[.[] | select(.status == "IN_PROGRESS" or .status == "QUEUED" or .status == "PENDING")] | length')
 
-            if [ "$PENDING_CHECKS" -eq 0 ]; then
-              echo "All checks have passed, proceeding with review"
-              echo "can_review=true" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
+          echo "External checks: Total=$EXTERNAL_TOTAL, Failed=$FAILED_CHECKS, Pending=$PENDING_CHECKS"
 
-            # If there are pending checks, wait and retry
-            echo "Some checks are still pending, waiting $DELAY seconds before retry ($ATTEMPT/$MAX_ATTEMPTS)..."
-            sleep $DELAY
-            DELAY=$((DELAY * 2))
-            ATTEMPT=$((ATTEMPT + 1))
-          done
-          echo "Timeout waiting for all checks to complete, skipping review"
-          echo "can_review=false" >> "$GITHUB_OUTPUT"
-          exit 0
+          if [ "$FAILED_CHECKS" -gt 0 ]; then
+            echo "Some external checks have failed, skipping review"
+            echo "can_review=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$PENDING_CHECKS" -gt 0 ]; then
+            echo "Some external checks are still pending, skipping review for now"
+            echo "can_review=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "All external checks have passed, proceeding with review"
+          echo "can_review=true" >> "$GITHUB_OUTPUT"
       - name: Check if bot already reviewed
         id: check-reviewed
         if: steps.check-status.outputs.can_review == 'true'
