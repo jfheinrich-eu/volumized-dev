@@ -123,7 +123,7 @@ jobs:
 
           # Check if all checks have succeeded
           # Count checks that are not SUCCESS, SKIPPED, or NEUTRAL (these are considered failures)
-          FAILED_CHECKS=$(echo "$STATUS_CHECKS" | jq '[.[] | select(.conclusion != "SUCCESS" and .conclusion != "SKIPPED" and .conclusion != "NEUTRAL")] | length')
+          FAILED_CHECKS=$(echo "$STATUS_CHECKS" | jq '[.[] | select(.conclusion != null and .conclusion != "SUCCESS" and .conclusion != "SKIPPED" and .conclusion != "NEUTRAL")] | length')
           # Count checks that are still running or queued
           PENDING_CHECKS=$(echo "$STATUS_CHECKS" | jq '[.[] | select(.status == "IN_PROGRESS" or .status == "QUEUED" or .status == "PENDING")] | length')
 
