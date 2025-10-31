@@ -84,7 +84,7 @@ jobs:
           echo "🛡️ Applying branch protection"
 
           # Extract branch protection settings
-          BRANCH="main"
+          BRANCH=$(yq e '.branches[0].name' .github/settings.yml)
           REV_COUNT=$(yq e \
             '.branches[0].protection.required_pull_request_reviews.required_approving_review_count' \
             .github/settings.yml)
@@ -112,16 +112,45 @@ jobs:
             '.branches[0].protection.required_conversation_resolution' \
             .github/settings.yml)
 
+          # Extract status check contexts as JSON array
+          CONTEXTS=$(yq e -o=json \
+            '.branches[0].protection.required_status_checks.contexts' \
+            .github/settings.yml)
+
+          # Extract restrictions (users, teams, apps)
+          RESTRICT_USERS=$(yq e -o=json \
+            '.branches[0].protection.restrictions.users' \
+            .github/settings.yml)
+          RESTRICT_TEAMS=$(yq e -o=json \
+            '.branches[0].protection.restrictions.teams' \
+            .github/settings.yml)
+          RESTRICT_APPS=$(yq e -o=json \
+            '.branches[0].protection.restrictions.apps' \
+            .github/settings.yml)
+
+          # Build restrictions JSON
+          # If all are empty arrays, set to null, otherwise build object
+          if [ "$RESTRICT_USERS" = "[]" ] && \
+             [ "$RESTRICT_TEAMS" = "[]" ] && \
+             [ "$RESTRICT_APPS" = "[]" ]; then
+            RESTRICTIONS="null"
+          else
+            RESTRICTIONS=$(jq -n \
+              --argjson users "$RESTRICT_USERS" \
+              --argjson teams "$RESTRICT_TEAMS" \
+              --argjson apps "$RESTRICT_APPS" \
+              '{users: $users, teams: $teams, apps: $apps}')
+          fi
+
           # Apply branch protection via API
-          # Note: Empty contexts array means no specific checks required
           gh api -X PUT "/repos/$REPO/branches/$BRANCH/protection" \
             -f required_status_checks[strict]=$STRICT_CHECK \
-            -f required_status_checks[contexts]='[]' \
+            -f required_status_checks[contexts]="$CONTEXTS" \
             -F enforce_admins=$ENFORCE_ADMIN \
             -F required_pull_request_reviews[dismiss_stale_reviews]=$DISMISS_STALE \
             -F required_pull_request_reviews[require_code_owner_reviews]=$CODE_OWNER \
             -F required_pull_request_reviews[required_approving_review_count]=$REV_COUNT \
-            -f restrictions=null \
+            -f restrictions="$RESTRICTIONS" \
             -F required_linear_history=$LINEAR_HIST \
             -F allow_force_pushes=$FORCE_PUSH \
             -F allow_deletions=$ALLOW_DEL \
