@@ -1,6 +1,7 @@
 # Repository settings
-# This file uses the Probot Settings App to manage repository settings
-# See: https://github.com/repository-settings/app
+# This file is automatically applied by the .github/workflows/sync-repo-settings.yml workflow
+# Edit this file and push to main branch to update repository settings
+# See: .github/README.md for documentation
 
 repository:
   # General settings
