@@ -42,23 +42,29 @@ jobs:
       - name: Get PR number
         id: get-pr
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER_DIRECT: ${{ github.event.pull_request.number }}
+          # Use environment variables to avoid code injection
+          CHECK_SUITE_PRS: ${{ toJson(github.event.check_suite.pull_requests) }}
+          WORKFLOW_RUN_PRS: ${{ toJson(github.event.workflow_run.pull_requests) }}
         run: |
           set -eu
 
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "pr_number=${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event_name }}" = "check_suite" ]; then
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            echo "pr_number=$PR_NUMBER_DIRECT" >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT_NAME" = "check_suite" ]; then
             # Extract PR number from check_suite event
-            PR_NUM=$(echo '${{ toJson(github.event.check_suite.pull_requests) }}' | jq -r '.[0].number // empty')
+            PR_NUM=$(echo "$CHECK_SUITE_PRS" | jq -r '.[0].number // empty')
             if [ -n "$PR_NUM" ]; then
               echo "pr_number=$PR_NUM" >> "$GITHUB_OUTPUT"
             else
               echo "No PR found in check_suite event"
               exit 0
             fi
-          elif [ "${{ github.event_name }}" = "workflow_run" ]; then
+          elif [ "$EVENT_NAME" = "workflow_run" ]; then
             # Extract PR number from workflow_run event
-            PR_NUM=$(echo '${{ toJson(github.event.workflow_run.pull_requests) }}' | jq -r '.[0].number // empty')
+            PR_NUM=$(echo "$WORKFLOW_RUN_PRS" | jq -r '.[0].number // empty')
             if [ -n "$PR_NUM" ]; then
               echo "pr_number=$PR_NUM" >> "$GITHUB_OUTPUT"
             else
@@ -66,7 +72,7 @@ jobs:
               exit 0
             fi
           else
-            echo "Unsupported event type: ${{ github.event_name }}"
+            echo "Unsupported event type: $EVENT_NAME"
             exit 0
           fi
 
