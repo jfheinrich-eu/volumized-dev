@@ -1,0 +1,203 @@
+contents: |
+  name: Devcontainer & Scripts Security and Best Practices
+
+  on:
+    pull_request:
+      paths:
+        - 'devcontainer.json'
+        - 'Dockerfile'
+        - 'initial_run.sh'
+        - 'scripts/**'
+    workflow_dispatch: {}
+
+  # Minimal permissions required
+  permissions:
+    contents: read
+    checks: write    # to create check run status
+    pull-requests: write # to post PR comments (optional), keep minimal
+
+  concurrency:
+    group: devcontainer-security-${{ github.ref }}
+    cancel-in-progress: true
+
+  jobs:
+    validate:
+      name: Validate devcontainer, Dockerfile and scripts
+      runs-on: ubuntu-latest
+      timeout-minutes: 30
+      outputs:
+        result: ${{ steps.finalize.outputs.result }}
+
+      steps:
+        - name: Checkout
+          uses: actions/checkout@v4
+          with:
+            fetch-depth: 0
+
+        - name: Create a check run (marking start)
+          id: create_check
+          uses: actions/github-script@v7
+          with:
+            github-token: ${{ secrets.GITHUB_TOKEN }}
+            script: |
+              const response = await github.rest.checks.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: "Devcontainer & Scripts checks",
+                head_sha: context.payload.pull_request ? context.payload.pull_request.head.sha : context.sha,
+                status: "in_progress",
+                started_at: new Date().toISOString()
+              });
+              return response.data.id;
+
+        - name: Validate devcontainer.json
+          id: devcontainer_validate
+          uses: devcontainers/ci@v0
+          with:
+            validate: 'true'
+          continue-on-error: false
+
+        - name: Run hadolint on Dockerfile
+          id: hadolint
+          uses: hadolint/hadolint-action@v2
+          with:
+            dockerfile: Dockerfile
+          continue-on-error: false
+
+        - name: Install shellcheck & shfmt
+          run: |
+            sudo apt-get update -y
+            sudo apt-get install -y shellcheck
+            go install mvdan.cc/sh/v3/cmd/shfmt@latest
+          env:
+            PATH: ${{ env.PATH }}:${{ github.workspace }}/go/bin
+
+        - name: ShellCheck scripts
+          id: shellcheck
+          run: |
+            set -euo pipefail
+            files=$(git ls-files -- 'scripts/**' 'initial_run.sh' || true)
+            if [ -z "$files" ]; then
+              echo "::notice::No shell scripts to check"
+              exit 0
+            fi
+            echo "Checking: $files"
+            # run shellcheck and collect failures
+            shellcheck -x -f gcc $files || true
+            # convert exit code logic into a pass/fail file
+            if shellcheck -x $files; then
+              echo "shellcheck=success" >> $GITHUB_OUTPUT
+            else
+              echo "shellcheck=failure" >> $GITHUB_OUTPUT
+            fi
+
+        - name: shfmt --check
+          id: shfmt
+          run: |
+            set -euo pipefail
+            files=$(git ls-files -- 'scripts/**' 'initial_run.sh' || true)
+            if [ -z "$files" ]; then
+              echo "::notice::No shell scripts to format-check"
+              echo "shfmt=success" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            # use installed shfmt from GOPATH
+            shfmt -d -s $files || true
+            if shfmt -l $files | grep -q .; then
+              echo "shfmt=failure" >> $GITHUB_OUTPUT
+              exit 1
+            else
+              echo "shfmt=success" >> $GITHUB_OUTPUT
+            fi
+
+        - name: Collect results
+          id: finalize
+          run: |
+            set -euo pipefail
+            # Default to success and mark failure if any step failed
+            STATUS="success"
+            # Check step outcomes
+            if [ "${{ steps.devcontainer_validate.outcome }}" != "success" ]; then STATUS="failure"; fi
+            if [ "${{ steps.hadolint.outcome }}" != "success" ]; then STATUS="failure"; fi
+            if [ "${{ steps.shellcheck.outcome }}" != "success" ]; then STATUS="failure"; fi
+            if [ "${{ steps.shfmt.outcome }}" != "success" ]; then STATUS="failure"; fi
+            echo "result=$STATUS" >> $GITHUB_OUTPUT
+
+        - name: Update check run (complete)
+          if: always()
+          uses: actions/github-script@v7
+          with:
+            github-token: ${{ secrets.GITHUB_TOKEN }}
+            script: |
+              const checkRunId = ${'${{ steps.create_check.outputs.result }}'};
+              const conclusion = '${{ steps.finalize.outputs.result }}' === 'success' ? 'success' : 'failure';
+              await github.rest.checks.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                check_run_id: checkRunId,
+                completed_at: new Date().toISOString(),
+                conclusion: conclusion,
+                output: {
+                  title: "Devcontainer & Scripts checks",
+                  summary: `Checks finished with conclusion: ${conclusion}`,
+                  text: [
+                    `devcontainer.json validation: ${{ steps.devcontainer_validate.outcome }}`,
+                    `Dockerfile hadolint: ${{ steps.hadolint.outcome }}`,
+                    `shellcheck: ${{ steps.shellcheck.outcome }}`,
+                    `shfmt: ${{ steps.shfmt.outcome }}`
+                  ].join('\n')
+                }
+              });
+
+    annotate:
+      name: Annotate PR and ensure final status
+      runs-on: ubuntu-latest
+      needs: validate
+      timeout-minutes: 10
+      if: always()
+      steps:
+        - name: Post PR comment with summary (idempotent)
+          uses: actions/github-script@v7
+          with:
+            github-token: ${{ secrets.GITHUB_TOKEN }}
+            script: |
+              const pr = context.payload.pull_request || {};
+              if (!pr.number) {
+                console.log('No PR context to annotate.');
+                return;
+              }
+              const conclusion = '${{ needs.validate.outputs.result }}' || 'failure';
+              const body = `Automated Devcontainer & Scripts checks completed with status: **${conclusion}**
+
+  - devcontainer.json validation: ${{ needs.validate.outputs.result }}
+  - Dockerfile hadolint: see job logs
+  - shellcheck: see job logs
+  - shfmt: see job logs
+
+If any check failed, please review the job logs in the Actions tab.`;
+              // Create a comment but avoid duplicates by checking recent bot comments
+              const comments = await github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number
+              });
+              const bot = context.actor;
+              const existing = comments.data.find(c => c.user && c.user.type === 'Bot' && c.body && c.body.includes('Automated Devcontainer & Scripts checks completed'));
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id,
+                  body
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: pr.number,
+                  body
+                });
+              }
+
+        - name: Final log
+          run: echo "Workflow annotate step finished. Result: ${{ needs.validate.outputs.result }}"
