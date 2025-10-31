@@ -11,6 +11,9 @@ name: Sync Repository Settings
 
 permissions:
   contents: read
+  # Note: GITHUB_TOKEN automatically has admin permissions when
+  # workflow is triggered from the default branch (main)
+  # See: https://docs.github.com/en/actions/security-guides/automatic-token-authentication#permissions-for-the-github_token
 
 jobs:
   sync-settings:
@@ -23,8 +26,14 @@ jobs:
 
       - name: Install yq for YAML parsing
         run: |
+          # Use specific version for reproducibility and security
+          YQ_VERSION="v4.40.5"
+          YQ_BINARY="yq_linux_amd64"
           sudo wget -qO /usr/local/bin/yq \
-            https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+            "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/${YQ_BINARY}"
+          # Verify checksum
+          echo "c7d8c5eab933a8b1c38691d8328bdc2ec0037ca24e44e5b16990fe2c52f8d7f5  /usr/local/bin/yq" | \
+            sudo sha256sum -c -
           sudo chmod +x /usr/local/bin/yq
 
       - name: Apply repository settings
@@ -104,9 +113,10 @@ jobs:
             .github/settings.yml)
 
           # Apply branch protection via API
+          # Note: Empty contexts array means no specific checks required
           gh api -X PUT "/repos/$REPO/branches/$BRANCH/protection" \
             -f required_status_checks[strict]=$STRICT_CHECK \
-            -F required_status_checks[contexts][]='' \
+            -f required_status_checks[contexts]='[]' \
             -F enforce_admins=$ENFORCE_ADMIN \
             -F required_pull_request_reviews[dismiss_stale_reviews]=$DISMISS_STALE \
             -F required_pull_request_reviews[require_code_owner_reviews]=$CODE_OWNER \
@@ -131,22 +141,26 @@ jobs:
           # Get number of labels in settings.yml
           LABEL_COUNT=$(yq e '.labels | length' .github/settings.yml)
 
-          for i in $(seq 0 $((LABEL_COUNT - 1))); do
-            NAME=$(yq e ".labels[$i].name" .github/settings.yml)
-            COLOR=$(yq e ".labels[$i].color" .github/settings.yml)
-            DESC=$(yq e ".labels[$i].description" .github/settings.yml)
+          if [ "$LABEL_COUNT" -gt 0 ]; then
+            for i in $(seq 0 $((LABEL_COUNT - 1))); do
+              NAME=$(yq e ".labels[$i].name" .github/settings.yml)
+              COLOR=$(yq e ".labels[$i].color" .github/settings.yml)
+              DESC=$(yq e ".labels[$i].description" .github/settings.yml)
 
-            # Try to create label, if it exists, update it
-            if gh label create "$NAME" --color "$COLOR" \
-              --description "$DESC" 2>/dev/null; then
-              echo "  ✓ Created label: $NAME"
-            else
-              gh label edit "$NAME" --color "$COLOR" \
-                --description "$DESC" 2>/dev/null && \
-                echo "  ✓ Updated label: $NAME" || \
-                echo "  ⚠ Could not update: $NAME"
-            fi
-          done
+              # Try to create label, if it exists, update it
+              if gh label create "$NAME" --color "$COLOR" \
+                --description "$DESC" 2>/dev/null; then
+                echo "  ✓ Created label: $NAME"
+              else
+                gh label edit "$NAME" --color "$COLOR" \
+                  --description "$DESC" 2>/dev/null && \
+                  echo "  ✓ Updated label: $NAME" || \
+                  echo "  ⚠ Could not update: $NAME"
+              fi
+            done
+          else
+            echo "  No labels defined in settings.yml"
+          fi
 
           echo "✅ Labels processed"
 
