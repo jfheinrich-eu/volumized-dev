@@ -17,7 +17,7 @@ Instead of relying on an external GitHub App, a **GitHub Actions Workflow** was 
 
 1. **`.github/workflows/sync-repo-settings.yml`** - The new workflow
 2. **`docs/TestingSettingsSync.md`** - Testing instructions (English)
-3. **`docs/ProtectedBranchSolution.md`** - This file
+3. **`docs/SolutionProtectedBranch.md`** - This file
 
 ### Modified Files
 

@@ -26,8 +26,8 @@ Created a **GitHub Actions workflow** that automatically applies repository sett
    - Manual and automatic testing instructions
    - Troubleshooting section
    
-3. **`docs/LösungProtectedBranch.md`**
-   - Detailed solution explanation in German
+3. **`docs/SolutionProtectedBranch.md`**
+   - Detailed solution explanation in English
    - How it works and benefits
    - Usage instructions
 
@@ -131,7 +131,7 @@ After the workflow runs, verify:
 .github/README.md                        |  91 +++++++++++++++++++++++++
 .github/settings.yml                     |   5 +-
 .github/workflows/sync-repo-settings.yml | 190 +++++++++++++++++++++++++++++++++++++++++++++++
-docs/LösungProtectedBranch.md            | 118 ++++++++++++++++++++++++++++++
+docs/SolutionProtectedBranch.md          | 118 ++++++++++++++++++++++++++++++
 docs/TestingSettingsSync.md              | 155 ++++++++++++++++++++++++++++++++++++++
 5 files changed, 538 insertions(+), 21 deletions(-)
 ```
@@ -147,7 +147,7 @@ docs/TestingSettingsSync.md              | 155 +++++++++++++++++++++++++++++++++
 ## Documentation
 
 - **English Testing Guide:** `docs/TestingSettingsSync.md`
-- **German Solution Explanation:** `docs/LösungProtectedBranch.md`
+- **Solution Explanation:** `docs/SolutionProtectedBranch.md`
 - **Workflow Details:** `.github/README.md`
 
 ## Support
