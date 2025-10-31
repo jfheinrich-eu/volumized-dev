@@ -3,10 +3,10 @@ name: Devcontainer & Scripts Security and Best Practices
 on:
   pull_request:
     paths:
-      - 'devcontainer.json'
-      - 'Dockerfile'
-      - 'initial_run.sh'
-      - 'scripts/**'
+      - "devcontainer.json"
+      - "Dockerfile"
+      - "initial_run.sh"
+      - "scripts/**"
   workflow_dispatch: {}
 
 # Minimal permissions required
@@ -53,7 +53,7 @@ jobs:
         id: devcontainer_validate
         uses: devcontainers/ci@v0
         with:
-          validate: 'true'
+          validate: "true"
 
       - name: Run hadolint on Dockerfile
         id: hadolint
@@ -170,7 +170,7 @@ jobs:
             - Dockerfile hadolint: see job logs
             - shellcheck: see job logs
             - shfmt: see job logs
-            
+
             If any check failed, please review the job logs in the Actions tab.`;
             const comments = await github.rest.issues.listComments({
               owner: context.repo.owner,
@@ -195,4 +195,4 @@ jobs:
             }
 
       - name: Final log
-        run: echo "Workflow annotate step finished. Result: ${{ needs.validate.outputs.result }}"
+        run: 'echo "Workflow annotate step finished. Result: ${{ needs.validate.outputs.result }}"'
