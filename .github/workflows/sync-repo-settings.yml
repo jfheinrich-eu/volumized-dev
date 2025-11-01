@@ -1,12 +1,12 @@
 ---
 name: Sync Repository Settings
 
-'on':
+"on":
   push:
     branches:
       - main
     paths:
-      - '.github/settings.yml'
+      - ".github/settings.yml"
   workflow_dispatch:
 
 permissions:
@@ -27,12 +27,12 @@ jobs:
       - name: Install yq for YAML parsing
         run: |
           # Use specific version for reproducibility and security
-          YQ_VERSION="v4.40.5"
+          YQ_VERSION="v4.48.1"
           YQ_BINARY="yq_linux_amd64"
           sudo wget -qO /usr/local/bin/yq \
             "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/${YQ_BINARY}"
           # Verify checksum
-          echo "c7d8c5eab933a8b1c38691d8328bdc2ec0037ca24e44e5b16990fe2c52f8d7f5  /usr/local/bin/yq" | \
+          echo "99df6047f5b577a9d25f969f7c3823ada3488de2e2115b30a0abb10d9324fd9f  /usr/local/bin/yq" | \
             sudo sha256sum -c -
           sudo chmod +x /usr/local/bin/yq
 
