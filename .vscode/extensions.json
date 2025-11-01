@@ -1,0 +1,49 @@
+{
+  "recommendations": [
+    // Essential formatters and language support
+    "esbenp.prettier-vscode",
+    "ms-python.black-formatter", 
+    "redhat.vscode-yaml",
+    
+    // GitHub Copilot AI assistance
+    "GitHub.copilot",
+    "GitHub.copilot-chat",
+    
+    // Code quality and linting
+    "dbaeumer.vscode-eslint",
+    "ms-python.python",
+    "ms-python.pylint",
+    
+    // Git and commit message support
+    "eamodio.gitlens",
+    "mhutchie.git-graph",
+    "vivaxy.vscode-conventional-commits",
+    
+    // Code quality and documentation
+    "aaron-bond.better-comments",
+    "streetsidesoftware.code-spell-checker",
+    "oderwat.indent-rainbow",
+    "bradlc.vscode-tailwindcss",
+    
+    // Additional useful extensions for this project
+    "yzhang.markdown-all-in-one",
+    "ms-azuretools.vscode-docker", 
+    "github.vscode-github-actions",
+    "ms-vscode.vscode-json",
+    "redhat.vscode-yaml",
+    
+    // Shell scripting support
+    "timonwong.shellcheck",
+    "foxundermoon.shell-format",
+    
+    // Security and best practices
+    "ms-vscode.vscode-security",
+    "sonarsource.sonarlint-vscode"
+  ],
+  "unwantedRecommendations": [
+    // Extensions that might conflict or are redundant
+    "ms-vscode.vscode-typescript-next",
+    "hookyqr.beautify",
+    "esbenp.prettier-vscode-standard"
+  ]
+}

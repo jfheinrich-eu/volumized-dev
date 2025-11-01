@@ -1,12 +1,12 @@
 ---
 name: Sync Repository Settings
 
-'on':
+"on":
   push:
     branches:
       - main
     paths:
-      - '.github/settings.yml'
+      - ".github/settings.yml"
   workflow_dispatch:
 
 permissions:
@@ -19,21 +19,43 @@ jobs:
   sync-settings:
     name: Apply Repository Settings from settings.yml
     runs-on: ubuntu-latest
+    env:
+      YQ_VERSION: v4.48.1
+      YQ_BINARY: yq_linux_amd64
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install yq for YAML parsing
+      - name: Get the checksum for yq version
         run: |
+          sudo wget -qO /usr/local/bin/extract_checksum.sh \
+            "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/extract-checksum.sh"
+          sudo chmod +x /usr/local/bin/extract_checksum.sh
+          sudo wget -qO ./checksums \
+            "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/checksums"
+          sudo wget -qO ./checksums_hashes_order \
+            "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/checksums_hashes_order"
+
+          CHECKSUM_LINE="$(/usr/local/bin/extract_checksum.sh SHA-256 "${YQ_BINARY}" | awk '{print $2 " " $1}')"
+          echo "CHECKSUM_LINE=${CHECKSUM_LINE}" >> $GITHUB_ENV
+
+      - name: Install yq for YAML parsing
+        env:
+          CHECKSUM_LINE: ${{ env.CHECKSUM_LINE }}
+          YQ_VERSION: ${{ env.YQ_VERSION }}
+          YQ_BINARY: ${{ env.YQ_BINARY }}
+        run: |
+          set -euo pipefail
           # Use specific version for reproducibility and security
-          YQ_VERSION="v4.40.5"
-          YQ_BINARY="yq_linux_amd64"
           sudo wget -qO /usr/local/bin/yq \
             "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/${YQ_BINARY}"
           # Verify checksum
-          echo "c7d8c5eab933a8b1c38691d8328bdc2ec0037ca24e44e5b16990fe2c52f8d7f5  /usr/local/bin/yq" | \
-            sudo sha256sum -c -
+          echo "$CHECKSUM_LINE" | sudo sha256sum -c -
+
           sudo chmod +x /usr/local/bin/yq
 
       - name: Apply repository settings
@@ -43,7 +65,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "🔧 Applying repository settings"
+          msg() { echo "$1"; }
+          msg "🔧 Applying repository settings"
 
           # Extract repository settings
           DESC=$(yq e '.repository.description' .github/settings.yml)
@@ -72,7 +95,7 @@ jobs:
             -F allow_rebase_merge=$REBASE \
             -F delete_branch_on_merge=$DEL_BR
 
-          echo "✅ Repository settings applied"
+          msg "✅ Repository settings applied"
 
       - name: Apply branch protection rules
         env:
@@ -81,7 +104,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "🛡️ Applying branch protection"
+          msg "🛡️ Applying branch protection"
 
           # Extract branch protection settings
           BRANCH=$(yq e '.branches[0].name' .github/settings.yml)
@@ -156,7 +179,7 @@ jobs:
             -F allow_deletions=$ALLOW_DEL \
             -F required_conversation_resolution=$CONV_RES
 
-          echo "✅ Branch protection applied"
+          msg "✅ Branch protection applied"
 
       - name: Create labels
         env:
@@ -165,7 +188,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "🏷️ Creating/updating labels"
+          msg "🏷️ Creating/updating labels"
 
           # Get number of labels in settings.yml
           LABEL_COUNT=$(yq e '.labels | length' .github/settings.yml)
@@ -179,41 +202,38 @@ jobs:
               # Try to create label, if it exists, update it
               if gh label create "$NAME" --color "$COLOR" \
                 --description "$DESC" 2>/dev/null; then
-                echo "  ✓ Created label: $NAME"
+                msg "  ✓ Created label: $NAME"
               else
                 gh label edit "$NAME" --color "$COLOR" \
                   --description "$DESC" 2>/dev/null && \
-                  echo "  ✓ Updated label: $NAME" || \
-                  echo "  ⚠ Could not update: $NAME"
+                  msg "  ✓ Updated label: $NAME" || \
+                  msg "  ⚠ Could not update: $NAME"
               fi
             done
           else
-            echo "  No labels defined in settings.yml"
+            msg "  No labels defined in settings.yml"
           fi
 
-          echo "✅ Labels processed"
+          msg "✅ Labels processed"
 
-      - name: Summary
-        run: |
-          cat >> $GITHUB_STEP_SUMMARY << 'EOFSUMMARY'
-          ## 🎉 Repository Settings Sync Complete
+            - name: Summary
+              run: |
+                set -euo pipefail
+                cat >> "$GITHUB_STEP_SUMMARY" <<EOFSUMMARY
+                ## 🎉 Repository Settings Sync Complete
 
-          The following settings from `.github/settings.yml` have been
-          applied:
+                The following settings from \`.github/settings.yml\` have been applied:
 
-          - ✅ Repository settings (description, homepage, features,
-            merge options)
-          - ✅ Branch protection rules for `main` branch
-          - ✅ Issue and PR labels
+                - ✅ Repository settings (description, homepage, features, merge options)
+                - ✅ Branch protection rules for \`main\` branch
+                - ✅ Issue and PR labels
 
-          ### Next Steps
+                ### Next Steps
 
-          You can verify the applied settings in the repository
-          settings page.
+                You can verify the applied settings in the repository settings page.
 
-          ### Note
+                ### Note
 
-          This workflow replaces the need for the Probot Settings App.
-          The settings are now automatically applied whenever
-          `.github/settings.yml` is updated on the main branch.
-          EOFSUMMARY
+                This workflow replaces the need for the Probot Settings App.
+                The settings are now automatically applied whenever \`.github/settings.yml\` is updated on the main branch.
+                EOFSUMMARY

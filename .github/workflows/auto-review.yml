@@ -2,6 +2,12 @@ name: Automated Bot Review
 
 # Trigger when all checks are successful and PR is ready for review
 on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to review (optional, will auto-detect if not provided)'
+        required: false
+        type: string
   pull_request:
     types:
       - ready_for_review
@@ -10,7 +16,7 @@ on:
     types:
       - completed
   workflow_run:
-    workflows: ["*"]
+    workflows: ["Devcontainer & Scripts Security and Best Practices"]
     types:
       - completed
 
@@ -34,6 +40,7 @@ jobs:
 
     # Only run on pull requests that are ready for review and not in draft mode
     if: |
+      github.event_name == 'workflow_dispatch' ||
       github.event_name == 'pull_request' ||
       (github.event_name == 'check_suite' && github.event.check_suite.conclusion == 'success') ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
@@ -50,7 +57,10 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           PR_NUMBER_DIRECT: ${{ github.event.pull_request.number }}
+          PR_NUMBER_INPUT: ${{ github.event.inputs.pr_number }}
           PR_DRAFT: ${{ github.event.pull_request.draft }}
+          GITHUB_HEAD_REF: ${{ github.head_ref }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
           # Use environment variables to avoid code injection
           CHECK_SUITE_PRS: ${{ toJson(github.event.check_suite.pull_requests) }}
           WORKFLOW_RUN_PRS: ${{ toJson(github.event.workflow_run.pull_requests) }}
@@ -59,6 +69,24 @@ jobs:
 
           # Validate conditions based on event type
           case "$EVENT_NAME" in
+            "workflow_dispatch")
+              # Manual trigger - use provided PR number or try to detect from current branch
+              if [[ -n "$PR_NUMBER_INPUT" ]]; then
+                echo "pr_number=$PR_NUMBER_INPUT" >> "$GITHUB_OUTPUT"
+              else
+                # Try to auto-detect PR from current context
+                # Use GitHub context variables instead of git command to avoid detached HEAD issues
+                CURRENT_BRANCH="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+                echo "Trying to auto-detect PR for branch: $CURRENT_BRANCH"
+                PR_NUM=$(gh pr list --head "$CURRENT_BRANCH" --json number --jq '.[0].number // empty' || echo "")
+                if [[ -n "$PR_NUM" ]]; then
+                  echo "pr_number=$PR_NUM" >> "$GITHUB_OUTPUT"
+                else
+                  echo "No PR number provided and could not auto-detect. Please provide pr_number input."
+                  exit 0
+                fi
+              fi
+              ;;
             "pull_request")
               if [[ "$PR_DRAFT" == "true" ]]; then
                 echo "Skipping draft PR"
@@ -128,62 +156,81 @@ jobs:
           COMMIT_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid --jq '.headRefOid')
           echo "Checking commit status for SHA: $COMMIT_SHA"
 
-          # Get commit status and check runs
+          # Get commit status and check runs for this specific PR
           COMMIT_STATUS=$(gh api "/repos/${{ github.repository }}/commits/$COMMIT_SHA/status" --jq '.state // "unknown"')
-          CHECK_RUNS=$(gh api "/repos/${{ github.repository }}/commits/$COMMIT_SHA/check-runs" --jq '.check_runs // []')
+          
+          # Get all check runs for this commit
+          ALL_CHECK_RUNS=$(gh api "/repos/${{ github.repository }}/commits/$COMMIT_SHA/check-runs" --jq '.check_runs // []')
+          
+          # Filter check runs to only include those from pull requests matching this PR
+          # This ensures we only check jobs that belong to this PR
+          CHECK_RUNS=$(echo "$ALL_CHECK_RUNS" | jq --arg pr "$PR_NUMBER" '[.[] | select(.pull_requests // [] | any(.number == ($pr | tonumber)))]')
           CHECK_RUNS_COUNT=$(echo "$CHECK_RUNS" | jq 'length')
 
           echo "Commit status: $COMMIT_STATUS"
-          echo "Check runs count: $CHECK_RUNS_COUNT"
-          echo "DEBUG: Check runs:"
+          echo "Total check runs for this PR: $CHECK_RUNS_COUNT"
+          echo "DEBUG: Check runs for PR #$PR_NUMBER:"
           echo "$CHECK_RUNS" | jq '.'
 
-          # Simple logic: If this is the only workflow or very few checks, proceed
-          if [ "$TOTAL_CHECKS" -le 1 ] && [ "$CHECK_RUNS_COUNT" -le 1 ]; then
-            echo "Single workflow scenario - proceeding with review"
+          # Count check runs by status, excluding this workflow (auto-review)
+          SUCCESSFUL_RUNS=$(echo "$CHECK_RUNS" | jq '[.[] | select(.name != "Auto Review by Bot" and .conclusion == "success")] | length')
+          FAILED_RUNS=$(echo "$CHECK_RUNS" | jq '[.[] | select(.name != "Auto Review by Bot" and .conclusion == "failure")] | length')
+          PENDING_RUNS=$(echo "$CHECK_RUNS" | jq '[.[] | select(.name != "Auto Review by Bot" and (.status == "in_progress" or .status == "queued" or .conclusion == null))] | length')
+          OTHER_RUNS=$(echo "$CHECK_RUNS" | jq '[.[] | select(.name != "Auto Review by Bot")] | length')
+          
+          echo "Check runs analysis for this PR:"
+          echo "  - Total (excluding auto-review): $OTHER_RUNS"
+          echo "  - Successful: $SUCCESSFUL_RUNS"
+          echo "  - Failed: $FAILED_RUNS"
+          echo "  - Pending: $PENDING_RUNS"
+          
+          # Decision logic:
+          # 1. If there are no other check runs (only auto-review), proceed with review
+          if [ "$OTHER_RUNS" -eq 0 ]; then
+            echo "✅ No other check runs found for this PR - proceeding with review"
             echo "can_review=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-
-          # If we have multiple check runs, analyze them
-          if [ "$CHECK_RUNS_COUNT" -gt 1 ]; then
-            # Count successful vs failed check runs (excluding this workflow)
-            SUCCESSFUL_RUNS=$(echo "$CHECK_RUNS" | jq '[.[] | select(.name != "Auto Review by Bot" and .conclusion == "success")] | length')
-            FAILED_RUNS=$(echo "$CHECK_RUNS" | jq '[.[] | select(.name != "Auto Review by Bot" and .conclusion == "failure")] | length')
-            PENDING_RUNS=$(echo "$CHECK_RUNS" | jq '[.[] | select(.name != "Auto Review by Bot" and (.status == "in_progress" or .status == "queued" or .conclusion == null))] | length')
-            
-            echo "Check runs analysis: Successful=$SUCCESSFUL_RUNS, Failed=$FAILED_RUNS, Pending=$PENDING_RUNS"
-            
-            if [ "$FAILED_RUNS" -gt 0 ]; then
-              echo "Some check runs have failed, skipping review"
-              echo "can_review=false" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-            
-            if [ "$PENDING_RUNS" -gt 0 ]; then
-              echo "Some check runs are still pending, skipping review for now"
-              echo "can_review=false" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
+          
+          # 2. If any check runs have failed, skip review
+          if [ "$FAILED_RUNS" -gt 0 ]; then
+            echo "❌ $FAILED_RUNS check run(s) have failed - skipping review"
+            echo "can_review=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
-
-          # If commit status is available and not pending/success, check it
+          
+          # 3. If any check runs are still pending, skip review for now
+          if [ "$PENDING_RUNS" -gt 0 ]; then
+            echo "⏳ $PENDING_RUNS check run(s) are still pending - skipping review for now"
+            echo "can_review=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          
+          # 4. All other checks passed, we can review
+          if [ "$SUCCESSFUL_RUNS" -gt 0 ]; then
+            echo "✅ All $SUCCESSFUL_RUNS check run(s) succeeded - proceeding with review"
+            echo "can_review=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          
+          # 5. Fallback: No check runs found (edge case), check commit status
+          echo "No check runs found, checking commit status..."
           case "$COMMIT_STATUS" in
             "success")
-              echo "Commit status is success, proceeding with review"
+              echo "✅ Commit status is success - proceeding with review"
               echo "can_review=true" >> "$GITHUB_OUTPUT"
               ;;
             "pending")
-              echo "Commit status is pending, skipping review for now"
+              echo "⏳ Commit status is pending - skipping review for now"
               echo "can_review=false" >> "$GITHUB_OUTPUT"
               ;;
             "failure"|"error")
-              echo "Commit status is $COMMIT_STATUS, skipping review"
+              echo "❌ Commit status is $COMMIT_STATUS - skipping review"
               echo "can_review=false" >> "$GITHUB_OUTPUT"
               ;;
             *)
-              # Unknown or no status - proceed with caution
-              echo "Commit status unknown ($COMMIT_STATUS), proceeding with review"
+              # Unknown or no status - proceed (e.g., no required status checks)
+              echo "ℹ️ Commit status unknown ($COMMIT_STATUS) - proceeding with review"
               echo "can_review=true" >> "$GITHUB_OUTPUT"
               ;;
           esac
