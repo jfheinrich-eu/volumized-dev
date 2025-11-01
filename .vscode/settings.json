@@ -1,0 +1,325 @@
+{
+  // =============================================================================
+  // GitHub Copilot Configuration
+  // =============================================================================
+  
+  // Language-specific Copilot settings
+  "github.copilot.enable": {
+    "*": true,
+    "yaml": true,
+    "json": true,
+    "markdown": true,
+    "shellscript": true,
+    "dockerfile": true,
+    "python": true,
+    "javascript": true,
+    "typescript": true,
+    "plaintext": false,  // Disable for plain text files
+    "scminput": false   // Disable in git commit messages
+  },
+  
+  // Copilot suggestions behavior
+  "github.copilot.inlineSuggest.enable": true,
+  "github.copilot.editor.enableAutoCompletions": true,
+  
+  // Advanced Copilot settings
+  "github.copilot.advanced": {
+    "secret_key": "default",
+    "length": 500,
+    "temperature": "",
+    "top_p": "",
+    "stop": {
+      "*": ["\n\n\n"]
+    },
+    "indentationMode": {
+      "*": "automatic",
+      "python": "spacesOnly",
+      "javascript": "automatic",
+      "typescript": "automatic"
+    },
+    "inlineSuggestCount": 3,
+    "listCount": 10,
+    "debug.overrideEngine": "",
+    "debug.testOverrideProxyUrl": "",
+    "debug.showScores": false
+  },
+  
+  // =============================================================================
+  // GitHub Copilot Chat Configuration
+  // =============================================================================
+  
+  // Enable Copilot Chat with custom instructions
+  "github.copilot.chat.enable": true,
+  "github.copilot.chat.welcomeMessage": "always",
+  
+  // =============================================================================
+  // Code Quality & Best Practices Enforcement
+  // =============================================================================
+  
+  // Force English for spell checking
+  "cSpell.language": "en",
+  "cSpell.enabled": true,
+  
+  // =============================================================================
+  // IntelliCode AI Configuration (Microsoft)
+  // =============================================================================
+  
+  "vsintellicode.modify.editor.suggestSelection": "automaticallyOverrodeDefaultValue",
+  "vsintellicode.features.python.deepLearning": "enabled",
+  "vsintellicode.features.typescript.deepLearning": "enabled",
+  "vsintellicode.features.java.deepLearning": "enabled",
+  
+  // =============================================================================
+  // AI-Enhanced Editor Features
+  // =============================================================================
+  
+  // Suggestion behavior
+  "editor.suggestSelection": "first",
+  "editor.acceptSuggestionOnCommitCharacter": true,
+  "editor.acceptSuggestionOnEnter": "on",
+  "editor.quickSuggestions": {
+    "other": "on",
+    "comments": "on",
+    "strings": "on"
+  },
+  "editor.quickSuggestionsDelay": 10,
+  "editor.suggestOnTriggerCharacters": true,
+  "editor.wordBasedSuggestions": "matchingDocuments",
+  "editor.parameterHints.enabled": true,
+  "editor.tabCompletion": "on",
+  
+  // Inline suggestions
+  "editor.inlineSuggest.enabled": true,
+  "editor.inlineSuggest.showToolbar": "onHover",
+  "editor.inlineSuggest.suppressSuggestions": false,
+  
+  // =============================================================================
+  // Language-Specific AI Enhancements
+  // =============================================================================
+  
+  // Python AI features with best practices
+  "[python]": {
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit",
+      "source.fixAll": "explicit"
+    },
+    "editor.defaultFormatter": "ms-python.black-formatter",
+    "editor.formatOnSave": true,
+    "github.copilot.enable": true,
+    // Enforce descriptive variable names
+    "python.linting.pylintArgs": [
+      "--disable=invalid-name",
+      "--variable-rgx=[a-z_][a-z0-9_]{2,30}$",
+      "--function-rgx=[a-z_][a-z0-9_]{2,30}$"
+    ]
+  },
+  
+  // JavaScript/TypeScript AI features with best practices
+  "[javascript]": {
+    "editor.codeActionsOnSave": {
+      "source.fixAll.eslint": "explicit",
+      "source.organizeImports": "explicit"
+    },
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "github.copilot.enable": true
+  },
+  
+  "[typescript]": {
+    "editor.codeActionsOnSave": {
+      "source.fixAll.eslint": "explicit",
+      "source.organizeImports": "explicit"
+    },
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "github.copilot.enable": true
+  },
+  
+  // YAML/JSON AI features
+  "[yaml]": {
+    "editor.defaultFormatter": "redhat.vscode-yaml",
+    "github.copilot.enable": true,
+    "editor.autoIndent": "advanced"
+  },
+  
+  "[json]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "github.copilot.enable": true
+  },
+  
+  // Shell script AI features
+  "[shellscript]": {
+    "github.copilot.enable": true,
+    "editor.insertSpaces": true,
+    "editor.tabSize": 2
+  },
+  
+  // Dockerfile AI features
+  "[dockerfile]": {
+    "github.copilot.enable": true,
+    "editor.quickSuggestions": {
+      "strings": true
+    }
+  },
+  
+  // Markdown AI features
+  "[markdown]": {
+    "github.copilot.enable": true,
+    "editor.wordWrap": "on",
+    "editor.quickSuggestions": {
+      "comments": "off",
+      "strings": "off",
+      "other": "off"
+    }
+  },
+  
+  // =============================================================================
+  // Code Analysis & Quality
+  // =============================================================================
+  
+  // Enable problem matchers for better AI context
+  "problems.decorations.enabled": true,
+  "problems.showCurrentInStatus": true,
+  
+  // Enhanced IntelliSense for better AI suggestions
+  "typescript.preferences.includePackageJsonAutoImports": "auto",
+  "typescript.suggest.autoImports": true,
+  "typescript.suggest.completeFunctionCalls": true,
+  "javascript.suggest.autoImports": true,
+  "javascript.suggest.completeFunctionCalls": true,
+  
+  // =============================================================================
+  // Workspace-Specific Settings
+  // =============================================================================
+  
+  // File associations for better AI context
+  "files.associations": {
+    "*.yml": "yaml",
+    "*.yaml": "yaml",
+    "Dockerfile*": "dockerfile",
+    ".github/workflows/*": "yaml",
+    ".gitignore": "ignore",
+    ".env*": "dotenv"
+  },
+  
+  // Enhanced search for AI context
+  "search.useGlobalIgnoreFiles": true,
+  "search.useParentIgnoreFiles": true,
+  "search.smartCase": true,
+  
+  // =============================================================================
+  // Performance & Memory
+  // =============================================================================
+  
+  // Optimize for better AI performance
+  "extensions.experimental.affinity": {
+    "GitHub.copilot": 1,
+    "GitHub.copilot-chat": 1
+  },
+  
+  // Memory management
+  "typescript.preferences.maxTsServerMemory": 4096,
+  
+  // =============================================================================
+  // Security & Privacy
+  // =============================================================================
+  
+  // Copilot telemetry and data sharing
+  "github.copilot.advanced.debug.filterLogCategories": [],
+  
+  // Disable suggestions for sensitive file patterns
+  "github.copilot.excludes": [
+    "**/.env*",
+    "**/secrets/**",
+    "**/private/**",
+    "**/*secret*",
+    "**/*password*",
+    "**/*token*",
+    "**/id_rsa*",
+    "**/*.pem",
+    "**/*.key"
+  ],
+  
+  // =============================================================================
+  // Git & Conventional Commits Configuration
+  // =============================================================================
+  
+  // Git commit message validation and formatting
+  "git.enableCommitSigning": false,
+  "git.alwaysSignOff": false,
+  "git.useCommitInputAsStashMessage": true,
+  "git.verboseCommit": true,
+  
+  // Commit message templates and validation
+  "git.inputValidationSubjectLength": 50,
+  "git.inputValidationLength": 72,
+  "workbench.editor.enablePreviewFromQuickOpen": false,
+  
+  // =============================================================================
+  // ESLint Configuration for Code Quality
+  // =============================================================================
+  
+  "eslint.validate": [
+    "javascript",
+    "javascriptreact", 
+    "typescript",
+    "typescriptreact"
+  ],
+  "eslint.format.enable": true,
+  "eslint.codeAction.showDocumentation": {
+    "enable": true
+  },
+  
+  // =============================================================================
+  // Comment and Documentation Standards
+  // =============================================================================
+  
+  // Better comments extension configuration
+  "better-comments.multilineComments": true,
+  "better-comments.highlightPlainText": false,
+  "better-comments.tags": [
+    {
+      "tag": "!",
+      "color": "#FF2D00",
+      "strikethrough": false,
+      "underline": false,
+      "backgroundColor": "transparent",
+      "bold": false,
+      "italic": false
+    },
+    {
+      "tag": "?",
+      "color": "#3498DB",
+      "strikethrough": false,
+      "underline": false,
+      "backgroundColor": "transparent",
+      "bold": false,
+      "italic": false
+    },
+    {
+      "tag": "//",
+      "color": "#474747",
+      "strikethrough": true,
+      "underline": false,
+      "backgroundColor": "transparent",
+      "bold": false,
+      "italic": false
+    },
+    {
+      "tag": "todo",
+      "color": "#FF8C00",
+      "strikethrough": false,
+      "underline": false,
+      "backgroundColor": "transparent",
+      "bold": false,
+      "italic": false
+    },
+    {
+      "tag": "*",
+      "color": "#98C379",
+      "strikethrough": false,
+      "underline": false,
+      "backgroundColor": "transparent",
+      "bold": false,
+      "italic": false
+    }
+  ]
+}

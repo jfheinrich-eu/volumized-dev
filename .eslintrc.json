@@ -1,0 +1,80 @@
+{
+  "env": {
+    "browser": true,
+    "es2021": true,
+    "node": true
+  },
+  "extends": [
+    "eslint:recommended",
+    "@typescript-eslint/recommended"
+  ],
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "ecmaVersion": "latest",
+    "sourceType": "module"
+  },
+  "plugins": [
+    "@typescript-eslint",
+    "prefer-arrow"
+  ],
+  "rules": {
+    // Enforce English comments and meaningful variable names
+    "spellcheck/spell-checker": "warn",
+    
+    // Variable naming rules
+    "id-length": ["error", { 
+      "min": 2, 
+      "exceptions": ["i", "j", "k", "_"],
+      "properties": "never"
+    }],
+    "id-match": ["error", "^[a-zA-Z_$][a-zA-Z0-9_$]*$", {
+      "properties": false,
+      "onlyDeclarations": false
+    }],
+    
+    // Comment rules
+    "valid-jsdoc": ["error", {
+      "requireReturn": true,
+      "requireReturnDescription": true,
+      "requireParamDescription": true
+    }],
+    "require-jsdoc": ["error", {
+      "require": {
+        "FunctionDeclaration": true,
+        "MethodDefinition": true,
+        "ClassDeclaration": true,
+        "ArrowFunctionExpression": false,
+        "FunctionExpression": false
+      }
+    }],
+    
+    // Code quality rules
+    "no-var": "error",
+    "prefer-const": "error",
+    "prefer-arrow-callback": "error",
+    "arrow-spacing": "error",
+    "no-console": "warn",
+    "no-debugger": "error",
+    
+    // Best practices
+    "eqeqeq": "error",
+    "curly": "error",
+    "brace-style": ["error", "1tbs"],
+    "indent": ["error", 2],
+    "quotes": ["error", "single"],
+    "semi": ["error", "always"],
+    
+    // TypeScript specific
+    "@typescript-eslint/no-unused-vars": "error",
+    "@typescript-eslint/explicit-function-return-type": "warn",
+    "@typescript-eslint/no-explicit-any": "warn"
+  },
+  "overrides": [
+    {
+      "files": ["*.js"],
+      "rules": {
+        "@typescript-eslint/explicit-function-return-type": "off"
+      }
+    }
+  ]
+}

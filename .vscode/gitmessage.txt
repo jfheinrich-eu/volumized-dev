@@ -1,0 +1,47 @@
+# Git Commit Message Template
+
+# <type>[optional scope]: <description>
+#
+# [optional body]
+#
+# [optional footer(s)]
+
+# --- COMMIT END ---
+# Type can be 
+#    feat     (new feature)
+#    fix      (bug fix)
+#    docs     (changes to documentation)
+#    style    (formatting, missing semi colons, etc; no code change)
+#    refactor (refactoring production code)
+#    test     (adding missing tests, refactoring tests; no production code change)
+#    chore    (updating grunt tasks etc; no production code change)
+#    ci       (changes to CI/CD configuration)
+# --------------------
+# Remember to:
+#   - Use the imperative mood in the subject line
+#   - Write all text in English
+#   - Capitalize the subject line
+#   - Do not end the subject line with a period
+#   - Separate subject from body with a blank line
+#   - Use the body to explain what and why vs. how
+#   - Can use multiple lines with "-" for bullet points in body
+# --------------------
+# Examples:
+#
+# feat(auth): add OAuth2 authentication flow
+#
+# fix: resolve memory leak in data processing
+# 
+# The previous implementation was creating circular references
+# in the user object cache, preventing proper garbage collection.
+#
+# docs: update README with installation instructions
+#
+# refactor(api): simplify user validation logic
+# 
+# - Remove redundant email format checks
+# - Consolidate validation functions into single module
+# - Improve error message clarity
+#
+# Closes #123
+# --------------------
