@@ -2,6 +2,12 @@ name: Automated Bot Review
 
 # Trigger when all checks are successful and PR is ready for review
 on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to review (optional, will auto-detect if not provided)'
+        required: false
+        type: string
   pull_request:
     types:
       - ready_for_review
@@ -10,7 +16,7 @@ on:
     types:
       - completed
   workflow_run:
-    workflows: ["*"]
+    workflows: ["CodeQL", "Check Sources"]
     types:
       - completed
 
@@ -34,6 +40,7 @@ jobs:
 
     # Only run on pull requests that are ready for review and not in draft mode
     if: |
+      github.event_name == 'workflow_dispatch' ||
       github.event_name == 'pull_request' ||
       (github.event_name == 'check_suite' && github.event.check_suite.conclusion == 'success') ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
@@ -50,6 +57,7 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           PR_NUMBER_DIRECT: ${{ github.event.pull_request.number }}
+          PR_NUMBER_INPUT: ${{ github.event.inputs.pr_number }}
           PR_DRAFT: ${{ github.event.pull_request.draft }}
           # Use environment variables to avoid code injection
           CHECK_SUITE_PRS: ${{ toJson(github.event.check_suite.pull_requests) }}
@@ -59,6 +67,23 @@ jobs:
 
           # Validate conditions based on event type
           case "$EVENT_NAME" in
+            "workflow_dispatch")
+              # Manual trigger - use provided PR number or try to detect from current branch
+              if [[ -n "$PR_NUMBER_INPUT" ]]; then
+                echo "pr_number=$PR_NUMBER_INPUT" >> "$GITHUB_OUTPUT"
+              else
+                # Try to auto-detect PR from current context
+                CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+                echo "Trying to auto-detect PR for branch: $CURRENT_BRANCH"
+                PR_NUM=$(gh pr list --head "$CURRENT_BRANCH" --json number --jq '.[0].number // empty' || echo "")
+                if [[ -n "$PR_NUM" ]]; then
+                  echo "pr_number=$PR_NUM" >> "$GITHUB_OUTPUT"
+                else
+                  echo "No PR number provided and could not auto-detect. Please provide pr_number input."
+                  exit 0
+                fi
+              fi
+              ;;
             "pull_request")
               if [[ "$PR_DRAFT" == "true" ]]; then
                 echo "Skipping draft PR"
@@ -146,13 +171,21 @@ jobs:
           fi
 
           # If we have multiple check runs, analyze them
-          if [ "$CHECK_RUNS_COUNT" -gt 1 ]; then
-            # Count successful vs failed check runs (excluding this workflow)
+          if [ "$CHECK_RUNS_COUNT" -gt 0 ]; then
+            # Count check runs by status, excluding this workflow
             SUCCESSFUL_RUNS=$(echo "$CHECK_RUNS" | jq '[.[] | select(.name != "Auto Review by Bot" and .conclusion == "success")] | length')
             FAILED_RUNS=$(echo "$CHECK_RUNS" | jq '[.[] | select(.name != "Auto Review by Bot" and .conclusion == "failure")] | length')
-            PENDING_RUNS=$(echo "$CHECK_RUNS" | jq '[.[] | select(.name != "Auto Review by Bot" and (.status == "in_progress" or .status == "queued" or .conclusion == null))] | length')
+            PENDING_RUNS=$(echo "$CHECK_RUNS" | jq '[.[] | select(.name != "Auto Review by Bot" and (.status == "in_progress" or .status == "queued" or (.conclusion == null and .status != "completed")))] | length')
+            OTHER_RUNS=$(echo "$CHECK_RUNS" | jq '[.[] | select(.name != "Auto Review by Bot")] | length')
             
-            echo "Check runs analysis: Successful=$SUCCESSFUL_RUNS, Failed=$FAILED_RUNS, Pending=$PENDING_RUNS"
+            echo "Check runs analysis: Total (excl. self)=$OTHER_RUNS, Successful=$SUCCESSFUL_RUNS, Failed=$FAILED_RUNS, Pending=$PENDING_RUNS"
+            
+            # If there are no other check runs, proceed
+            if [ "$OTHER_RUNS" -eq 0 ]; then
+              echo "No other check runs found, proceeding with review"
+              echo "can_review=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
             
             if [ "$FAILED_RUNS" -gt 0 ]; then
               echo "Some check runs have failed, skipping review"
@@ -163,6 +196,13 @@ jobs:
             if [ "$PENDING_RUNS" -gt 0 ]; then
               echo "Some check runs are still pending, skipping review for now"
               echo "can_review=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            
+            # All other checks passed, we can review
+            if [ "$SUCCESSFUL_RUNS" -gt 0 ]; then
+              echo "All other check runs succeeded, proceeding with review"
+              echo "can_review=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi
           fi
