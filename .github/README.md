@@ -70,15 +70,16 @@ The repository settings sync workflow automatically applies configuration from `
 The automated review workflow provides bot-assisted code review when all checks pass.
 
 #### Triggers
+- **Manual trigger**: Can be manually executed via `workflow_dispatch` with optional PR number
 - Pull request becomes ready for review
 - Pull request is synchronized (new commits)
 - Check suite completes successfully
-- Any workflow run completes
+- Workflow run completes (specifically "Devcontainer & Scripts Security and Best Practices")
 
 #### Workflow Steps
 
-1. **Get PR Number**: Extracts the PR number from various event types
-2. **Check Status**: Verifies all required status checks have passed
+1. **Get PR Number**: Extracts the PR number from various event types (supports auto-detection for manual triggers)
+2. **Check Status**: Verifies all required status checks have passed for the specific PR
 3. **Check Reviewed**: Ensures bot hasn't already reviewed this PR
 4. **Perform Review**: Submits an automated approval with summary
 5. **Add Label**: Tags PR with "automated" label
@@ -87,11 +88,18 @@ The automated review workflow provides bot-assisted code review when all checks 
 #### Features
 
 **Robust Design:**
-- Handles multiple trigger event types (pull_request, check_suite, workflow_run)
+- Handles multiple trigger event types (pull_request, check_suite, workflow_run, workflow_dispatch)
+- **Filters check runs by PR number**: Only considers jobs that belong to the specific PR
+- **Handles solo workflow scenario**: Works correctly when it's the only workflow running
 - Validates PR state (open, not draft)
 - Checks all status checks before reviewing
 - Prevents duplicate reviews
 - Comprehensive error handling
+
+**Manual Execution:**
+- Can be triggered manually via GitHub UI (Actions → Automated Bot Review → Run workflow)
+- Accepts optional PR number as input, or auto-detects from current branch
+- Useful for re-running review after fixing issues
 
 **Security:**
 - Uses `secrets.BOT_TOKEN` for authentication
@@ -102,7 +110,8 @@ The automated review workflow provides bot-assisted code review when all checks 
 - Detailed review comments with PR statistics
 - Clear next steps for human reviewers
 - Automated labeling for tracking
-- Informative error messages
+- Informative error messages with emoji indicators
+- Debug output for troubleshooting
 
 ## Setup Instructions
 
@@ -171,6 +180,12 @@ You can also manually trigger the workflow:
 3. Mark PR as "ready for review" (if it was draft)
 4. Verify the bot reviews the PR automatically
 5. Check that the "automated" label is added
+
+**Alternative: Manual Trigger**
+1. Go to Actions → Automated Bot Review
+2. Click "Run workflow"
+3. Optionally provide a PR number, or leave empty to auto-detect
+4. Verify the bot reviews the specified/detected PR
 
 ## Maintenance
 
