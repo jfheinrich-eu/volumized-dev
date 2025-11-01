@@ -59,6 +59,8 @@ jobs:
           PR_NUMBER_DIRECT: ${{ github.event.pull_request.number }}
           PR_NUMBER_INPUT: ${{ github.event.inputs.pr_number }}
           PR_DRAFT: ${{ github.event.pull_request.draft }}
+          GITHUB_HEAD_REF: ${{ github.head_ref }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
           # Use environment variables to avoid code injection
           CHECK_SUITE_PRS: ${{ toJson(github.event.check_suite.pull_requests) }}
           WORKFLOW_RUN_PRS: ${{ toJson(github.event.workflow_run.pull_requests) }}
@@ -73,7 +75,8 @@ jobs:
                 echo "pr_number=$PR_NUMBER_INPUT" >> "$GITHUB_OUTPUT"
               else
                 # Try to auto-detect PR from current context
-                CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+                # Use GitHub context variables instead of git command to avoid detached HEAD issues
+                CURRENT_BRANCH="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
                 echo "Trying to auto-detect PR for branch: $CURRENT_BRANCH"
                 PR_NUM=$(gh pr list --head "$CURRENT_BRANCH" --json number --jq '.[0].number // empty' || echo "")
                 if [[ -n "$PR_NUM" ]]; then
@@ -171,11 +174,13 @@ jobs:
           fi
 
           # If we have multiple check runs, analyze them
+          # Changed from -gt 1 to -gt 0 to handle cases where this workflow might be the only one
+          # The OTHER_RUNS counter (line 179) ensures we still skip if only self is present
           if [ "$CHECK_RUNS_COUNT" -gt 0 ]; then
             # Count check runs by status, excluding this workflow
             SUCCESSFUL_RUNS=$(echo "$CHECK_RUNS" | jq '[.[] | select(.name != "Auto Review by Bot" and .conclusion == "success")] | length')
             FAILED_RUNS=$(echo "$CHECK_RUNS" | jq '[.[] | select(.name != "Auto Review by Bot" and .conclusion == "failure")] | length')
-            PENDING_RUNS=$(echo "$CHECK_RUNS" | jq '[.[] | select(.name != "Auto Review by Bot" and (.status == "in_progress" or .status == "queued" or (.conclusion == null and .status != "completed")))] | length')
+            PENDING_RUNS=$(echo "$CHECK_RUNS" | jq '[.[] | select(.name != "Auto Review by Bot" and (.status == "in_progress" or .status == "queued"))] | length')
             OTHER_RUNS=$(echo "$CHECK_RUNS" | jq '[.[] | select(.name != "Auto Review by Bot")] | length')
             
             echo "Check runs analysis: Total (excl. self)=$OTHER_RUNS, Successful=$SUCCESSFUL_RUNS, Failed=$FAILED_RUNS, Pending=$PENDING_RUNS"
