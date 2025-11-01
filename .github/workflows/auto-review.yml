@@ -59,6 +59,8 @@ jobs:
           PR_NUMBER_DIRECT: ${{ github.event.pull_request.number }}
           PR_NUMBER_INPUT: ${{ github.event.inputs.pr_number }}
           PR_DRAFT: ${{ github.event.pull_request.draft }}
+          GITHUB_HEAD_REF: ${{ github.head_ref }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
           # Use environment variables to avoid code injection
           CHECK_SUITE_PRS: ${{ toJson(github.event.check_suite.pull_requests) }}
           WORKFLOW_RUN_PRS: ${{ toJson(github.event.workflow_run.pull_requests) }}
@@ -73,7 +75,8 @@ jobs:
                 echo "pr_number=$PR_NUMBER_INPUT" >> "$GITHUB_OUTPUT"
               else
                 # Try to auto-detect PR from current context
-                CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+                # Use GitHub context variables instead of git command to avoid detached HEAD issues
+                CURRENT_BRANCH="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
                 echo "Trying to auto-detect PR for branch: $CURRENT_BRANCH"
                 PR_NUM=$(gh pr list --head "$CURRENT_BRANCH" --json number --jq '.[0].number // empty' || echo "")
                 if [[ -n "$PR_NUM" ]]; then
