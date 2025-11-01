@@ -16,7 +16,7 @@ on:
     types:
       - completed
   workflow_run:
-    workflows: ["CodeQL", "Check Sources"]
+    workflows: ["Devcontainer & Scripts Security and Best Practices"]
     types:
       - completed
 
@@ -156,79 +156,81 @@ jobs:
           COMMIT_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid --jq '.headRefOid')
           echo "Checking commit status for SHA: $COMMIT_SHA"
 
-          # Get commit status and check runs
+          # Get commit status and check runs for this specific PR
           COMMIT_STATUS=$(gh api "/repos/${{ github.repository }}/commits/$COMMIT_SHA/status" --jq '.state // "unknown"')
-          CHECK_RUNS=$(gh api "/repos/${{ github.repository }}/commits/$COMMIT_SHA/check-runs" --jq '.check_runs // []')
+          
+          # Get all check runs for this commit
+          ALL_CHECK_RUNS=$(gh api "/repos/${{ github.repository }}/commits/$COMMIT_SHA/check-runs" --jq '.check_runs // []')
+          
+          # Filter check runs to only include those from pull requests matching this PR
+          # This ensures we only check jobs that belong to this PR
+          CHECK_RUNS=$(echo "$ALL_CHECK_RUNS" | jq --arg pr "$PR_NUMBER" '[.[] | select(.pull_requests // [] | any(.number == ($pr | tonumber)))]')
           CHECK_RUNS_COUNT=$(echo "$CHECK_RUNS" | jq 'length')
 
           echo "Commit status: $COMMIT_STATUS"
-          echo "Check runs count: $CHECK_RUNS_COUNT"
-          echo "DEBUG: Check runs:"
+          echo "Total check runs for this PR: $CHECK_RUNS_COUNT"
+          echo "DEBUG: Check runs for PR #$PR_NUMBER:"
           echo "$CHECK_RUNS" | jq '.'
 
-          # Simple logic: If this is the only workflow or very few checks, proceed
-          if [ "$TOTAL_CHECKS" -le 1 ] && [ "$CHECK_RUNS_COUNT" -le 1 ]; then
-            echo "Single workflow scenario - proceeding with review"
+          # Count check runs by status, excluding this workflow (auto-review)
+          SUCCESSFUL_RUNS=$(echo "$CHECK_RUNS" | jq '[.[] | select(.name != "Auto Review by Bot" and .conclusion == "success")] | length')
+          FAILED_RUNS=$(echo "$CHECK_RUNS" | jq '[.[] | select(.name != "Auto Review by Bot" and .conclusion == "failure")] | length')
+          PENDING_RUNS=$(echo "$CHECK_RUNS" | jq '[.[] | select(.name != "Auto Review by Bot" and (.status == "in_progress" or .status == "queued" or .conclusion == null))] | length')
+          OTHER_RUNS=$(echo "$CHECK_RUNS" | jq '[.[] | select(.name != "Auto Review by Bot")] | length')
+          
+          echo "Check runs analysis for this PR:"
+          echo "  - Total (excluding auto-review): $OTHER_RUNS"
+          echo "  - Successful: $SUCCESSFUL_RUNS"
+          echo "  - Failed: $FAILED_RUNS"
+          echo "  - Pending: $PENDING_RUNS"
+          
+          # Decision logic:
+          # 1. If there are no other check runs (only auto-review), proceed with review
+          if [ "$OTHER_RUNS" -eq 0 ]; then
+            echo "✅ No other check runs found for this PR - proceeding with review"
             echo "can_review=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-
-          # If we have multiple check runs, analyze them
-          # Changed from -gt 1 to -gt 0 to handle cases where this workflow might be the only one
-          # The OTHER_RUNS counter (line 179) ensures we still skip if only self is present
-          if [ "$CHECK_RUNS_COUNT" -gt 0 ]; then
-            # Count check runs by status, excluding this workflow
-            SUCCESSFUL_RUNS=$(echo "$CHECK_RUNS" | jq '[.[] | select(.name != "Auto Review by Bot" and .conclusion == "success")] | length')
-            FAILED_RUNS=$(echo "$CHECK_RUNS" | jq '[.[] | select(.name != "Auto Review by Bot" and .conclusion == "failure")] | length')
-            PENDING_RUNS=$(echo "$CHECK_RUNS" | jq '[.[] | select(.name != "Auto Review by Bot" and (.status == "in_progress" or .status == "queued"))] | length')
-            OTHER_RUNS=$(echo "$CHECK_RUNS" | jq '[.[] | select(.name != "Auto Review by Bot")] | length')
-            
-            echo "Check runs analysis: Total (excl. self)=$OTHER_RUNS, Successful=$SUCCESSFUL_RUNS, Failed=$FAILED_RUNS, Pending=$PENDING_RUNS"
-            
-            # If there are no other check runs, proceed
-            if [ "$OTHER_RUNS" -eq 0 ]; then
-              echo "No other check runs found, proceeding with review"
-              echo "can_review=true" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-            
-            if [ "$FAILED_RUNS" -gt 0 ]; then
-              echo "Some check runs have failed, skipping review"
-              echo "can_review=false" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-            
-            if [ "$PENDING_RUNS" -gt 0 ]; then
-              echo "Some check runs are still pending, skipping review for now"
-              echo "can_review=false" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-            
-            # All other checks passed, we can review
-            if [ "$SUCCESSFUL_RUNS" -gt 0 ]; then
-              echo "All other check runs succeeded, proceeding with review"
-              echo "can_review=true" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
+          
+          # 2. If any check runs have failed, skip review
+          if [ "$FAILED_RUNS" -gt 0 ]; then
+            echo "❌ $FAILED_RUNS check run(s) have failed - skipping review"
+            echo "can_review=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
-
-          # If commit status is available and not pending/success, check it
+          
+          # 3. If any check runs are still pending, skip review for now
+          if [ "$PENDING_RUNS" -gt 0 ]; then
+            echo "⏳ $PENDING_RUNS check run(s) are still pending - skipping review for now"
+            echo "can_review=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          
+          # 4. All other checks passed, we can review
+          if [ "$SUCCESSFUL_RUNS" -gt 0 ]; then
+            echo "✅ All $SUCCESSFUL_RUNS check run(s) succeeded - proceeding with review"
+            echo "can_review=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          
+          # 5. Fallback: No check runs found (edge case), check commit status
+          echo "No check runs found, checking commit status..."
           case "$COMMIT_STATUS" in
             "success")
-              echo "Commit status is success, proceeding with review"
+              echo "✅ Commit status is success - proceeding with review"
               echo "can_review=true" >> "$GITHUB_OUTPUT"
               ;;
             "pending")
-              echo "Commit status is pending, skipping review for now"
+              echo "⏳ Commit status is pending - skipping review for now"
               echo "can_review=false" >> "$GITHUB_OUTPUT"
               ;;
             "failure"|"error")
-              echo "Commit status is $COMMIT_STATUS, skipping review"
+              echo "❌ Commit status is $COMMIT_STATUS - skipping review"
               echo "can_review=false" >> "$GITHUB_OUTPUT"
               ;;
             *)
-              # Unknown or no status - proceed with caution
-              echo "Commit status unknown ($COMMIT_STATUS), proceeding with review"
+              # Unknown or no status - proceed (e.g., no required status checks)
+              echo "ℹ️ Commit status unknown ($COMMIT_STATUS) - proceeding with review"
               echo "can_review=true" >> "$GITHUB_OUTPUT"
               ;;
           esac
